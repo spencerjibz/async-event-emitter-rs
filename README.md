@@ -1,4 +1,5 @@
 ### async-event-emitter
+![Crates.io](https://img.shields.io/crates/v/async-event-emitter)
 [![CI](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/ci.yml)
 [![cov_ci](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/codecov.yml/badge.svg)](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/codecov.yml)
 [![codecov](https://codecov.io/gh/spencerjibz/async-event-emitter-rs/graph/badge.svg?token=WDGKRW604P)](https://codecov.io/gh/spencerjibz/async-event-emitter-rs)
