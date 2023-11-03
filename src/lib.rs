@@ -124,7 +124,7 @@ pub type AsyncCB = dyn Fn(Vec<u8>) -> BoxFuture<'static, ()> + Send + Sync + 'st
 
 #[derive(Clone)]
 pub struct AsyncListener {
-    callback: Arc<AsyncCB>,
+    pub callback: Arc<AsyncCB>,
     pub limit: Option<u64>,
     pub id: String,
 }
