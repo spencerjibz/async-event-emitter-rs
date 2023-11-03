@@ -2,8 +2,4 @@ branch: true
 ignore-not-existing: true
 llvm: true
 output-type: lcov
-output-path: ./coverage/tests.lcov
-ignore:
-     - "/*"
-     - "C:/*"
-     - "../*"
+output-path: coverage
