@@ -27,6 +27,7 @@ event_emitter.emit("Say Hello", ()).await;
 
 }
 ```
+
 #### Basic Usage
 
 We can emit and listen to values of any type so long as they implement the Debug trait and serde's Serialize and Deserialize traits.
@@ -85,7 +86,7 @@ After all, one of the main points of using an EventEmitter is to avoid passing d
 ```rust
 // global_event_emitter.rs
 use lazy_static::lazy_static;
-use std::sync::Mutex;
+use futures::lock::Mutex;
 use async_event_emitter::AsyncEventEmitter;
 
 // Use lazy_static! because the size of EventEmitter is not known at compile time
@@ -97,8 +98,8 @@ pub static ref EVENT_EMITTER: Mutex<AsyncEventEmitter> = Mutex::new(AsyncEventEm
 #[tokio::main]
 async fn main() {
 // We need to maintain a lock through the mutex so we can avoid data races
-EVENT_EMITTER.lock().unwrap().on("Hello", |_:()|  async {println!("hello there!")});
-EVENT_EMITTER.lock().unwrap().emit("Hello", ()).await;
+EVENT_EMITTER.lock().await.on("Hello", |_:()|  async {println!("hello there!")});
+EVENT_EMITTER.lock().await.emit("Hello", ()).await;
 }
 
 async fn random_function() {
