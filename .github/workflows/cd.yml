@@ -31,7 +31,7 @@ jobs:
                  with:
                       token: ${{ secrets.GITHUB_TOKEN }}
                       commit-message: Update version
-                      title: Update version
+                      title: Update library to version
                       body: Update version to ${{ steps.tag.outputs.tag }}
                       branch: update-version-${{ steps.tag.outputs.tag }}
                       base: main
