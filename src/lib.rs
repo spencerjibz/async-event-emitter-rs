@@ -367,12 +367,11 @@ impl fmt::Debug for AsyncEventEmitter {
     }
 }
 
-
 #[cfg(test)]
 
 mod async_event_emitter {
-    use anyhow::Ok;
     use super::AsyncEventEmitter;
+    use anyhow::Ok;
     use futures::lock::Mutex;
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
