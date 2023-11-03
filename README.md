@@ -1,18 +1,18 @@
-### [`async-event-emitter`](https://github.com/spencerjibz/async-event-emitter-rs)
+#### [`async-event-emitter`](https://github.com/spencerjibz/async-event-emitter-rs)
 
 an Async implementation of the [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs) crate
 
 Allows you to subscribe to events with callbacks and also fire those events.
 Events are in the form of (strings, value) and callbacks are in the form of closures that take in a value parameter;
 
-### Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
+#### Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
 
 -    Emitted values should implement an extra trait (Debug) in addition to Serde's Serialize and Deserialize.
 -    This is an async implementation, currently limited to tokio, but async-std will be added soon under a feature flag.
 -    The listener methods **_(on and once)_** take a callback that returns a future instead of a merely a closure.
 -    The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
 
-### Getting Started
+#### Getting Started
 
 ```rust
 use async_event_emitter::AsyncEventEmitter;
@@ -27,8 +27,7 @@ event_emitter.emit("Say Hello", ()).await;
 
 }
 ```
-
-### Basic Usage
+#### Basic Usage
 
 We can emit and listen to values of any type so long as they implement the Debug trait and serde's Serialize and Deserialize traits.
 A single EventEmitter instance can have listeners to values of multiple types.
@@ -77,9 +76,9 @@ None => print!("No event listener of that id exists")
 }
 ```
 
-### Creating a Global EventEmitter
+#### Creating a Global EventEmitter
 
-It's likely that you'll want to have a single EventEmitter instance that can be shared across files;
+You'll likely want to have a single EventEmitter instance that can be shared across files;
 
 After all, one of the main points of using an EventEmitter is to avoid passing down a value through several nested functions/types and having a global subscription service.
 
@@ -109,4 +108,4 @@ EVENT_EMITTER.lock().unwrap().on("Hello", |_: ()| async { println!("Random stuff
 
 ```
 
-### License
+#### License
