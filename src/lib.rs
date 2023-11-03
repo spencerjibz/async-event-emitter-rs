@@ -87,25 +87,25 @@
         ```
         // global_event_emitter.rs
         use lazy_static::lazy_static;
-        use std::sync::Mutex;
+        use futures::lock::Mutex;
         use async_event_emitter::AsyncEventEmitter;
 
         // Use lazy_static! because the size of EventEmitter is not known at compile time
         lazy_static! {
             // Export the emitter with `pub` keyword
             pub static ref EVENT_EMITTER: Mutex<AsyncEventEmitter> = Mutex::new(AsyncEventEmitter::new());
-        }.
+        }
 
         #[tokio::main]
         async fn main() {
             // We need to maintain a lock through the mutex so we can avoid data races
-            EVENT_EMITTER.lock().unwrap().on("Hello", |_:()|  async {println!("hello there!")});
-            EVENT_EMITTER.lock().unwrap().emit("Hello", ()).await;
+            EVENT_EMITTER.lock().await.on("Hello", |_:()|  async {println!("hello there!")});
+            EVENT_EMITTER.lock().await.emit("Hello", ()).await;
         }
 
         async fn random_function() {
             // When the <"Hello"> event is emitted in main.rs then print <"Random stuff!">
-            EVENT_EMITTER.lock().unwrap().on("Hello", |_: ()| async { println!("Random stuff!")});
+            EVENT_EMITTER.lock().await.on("Hello", |_: ()| async { println!("Random stuff!")});
         }
 
         ```
@@ -113,6 +113,7 @@
         License: MIT
 */
 
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tokio::task::{self};
@@ -168,7 +169,10 @@ impl AsyncEventEmitter {
         if let Some(listeners) = self.listeners.get_mut(event) {
             let mut listeners_to_remove: Vec<usize> = Vec::new();
             for (index, listener) in listeners.iter_mut().enumerate() {
-                let bytes: Vec<u8> = bincode::serialize(&value).unwrap();
+                let bytes: Vec<u8> = bincode::serialize(&value).context(format!(
+                    " typeof {} can't be serialized",
+                    std::any::type_name::<T>()
+                ))?;
 
                 let callback = Arc::clone(&listener.callback);
 
@@ -263,7 +267,12 @@ impl AsyncEventEmitter {
     {
         let id = Uuid::new_v4().to_string();
         let parsed_callback = move |bytes: Vec<u8>| {
-            let value: T = bincode::deserialize(&bytes).unwrap();
+            let value: T = bincode::deserialize(&bytes).unwrap_or_else(|_| {
+                panic!(
+                    " value can't be deserialized into type {}",
+                    std::any::type_name::<T>()
+                )
+            });
 
             callback(value).boxed()
         };
