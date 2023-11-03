@@ -1,4 +1,6 @@
-#### [`async-event-emitter`](https://github.com/spencerjibz/async-event-emitter-rs)
+### async-event-emitter
+[![CI](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 an Async implementation of the [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs) crate
 
@@ -110,3 +112,4 @@ EVENT_EMITTER.lock().unwrap().on("Hello", |_: ()| async { println!("Random stuff
 ```
 
 #### License
+MIT License (MIT), see [LICENSE](LICENSE)
