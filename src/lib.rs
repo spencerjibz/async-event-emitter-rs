@@ -113,7 +113,6 @@
         License: MIT
 */
 
-use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tokio::task::{self};
@@ -169,10 +168,7 @@ impl AsyncEventEmitter {
         if let Some(listeners) = self.listeners.get_mut(event) {
             let mut listeners_to_remove: Vec<usize> = Vec::new();
             for (index, listener) in listeners.iter_mut().enumerate() {
-                let bytes: Vec<u8> = bincode::serialize(&value).context(format!(
-                    " typeof {} can't be serialized",
-                    std::any::type_name::<T>()
-                ))?;
+                let bytes: Vec<u8> = bincode::serialize(&value)?;
 
                 let callback = Arc::clone(&listener.callback);
 
@@ -372,7 +368,7 @@ impl fmt::Debug for AsyncEventEmitter {
 mod async_event_emitter {
     use super::AsyncEventEmitter;
     use anyhow::Ok;
-    use futures::lock::Mutex;
+    use futures::{lock::Mutex, FutureExt};
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
 
@@ -421,6 +417,10 @@ mod async_event_emitter {
     #[tokio::test]
     async fn test_emit_multiple_args() -> anyhow::Result<()> {
         let mut event_emitter = AsyncEventEmitter::new();
+        let time = Time {
+            hour: "22".to_owned(),
+            minute: "30".to_owned(),
+        };
         let name = "LOG_DATE".to_string();
         let payload = (
             Date {
@@ -428,10 +428,11 @@ mod async_event_emitter {
                 day: "Tuesday".to_string(),
             },
             name,
+            time,
         );
 
         let copy = payload.clone();
-        event_emitter.on("LOG_DATE", move |tup: (Date, String)| {
+        event_emitter.on("LOG_DATE", move |tup: (Date, String, Time)| {
             assert_eq!(tup, copy);
             async move {}
         });
@@ -484,6 +485,17 @@ mod async_event_emitter {
     #[tokio::test]
     async fn remove_listeners() -> anyhow::Result<()> {
         let mut event_emitter = AsyncEventEmitter::new();
+        let dt = DateTime(
+            Date {
+                month: "11".to_owned(),
+                day: String::from("03"),
+            },
+            Time {
+                hour: "12".to_owned(),
+                minute: "50".to_owned(),
+            },
+        );
+        let copy = dt.clone();
 
         let _listener_id =
             event_emitter.on(
@@ -491,7 +503,17 @@ mod async_event_emitter {
                 |msg: String| async move { assert_eq!(&msg, "pong") },
             );
 
+        let _listener_two = event_emitter.on("DateTime", move |d: Vec<u8>| {
+            let copy = dt.clone();
+            async move {
+                let a = bincode::serialize(&copy).unwrap();
+                assert!(!a.is_empty());
+                assert!(!d.is_empty())
+            }
+        });
+
         event_emitter.emit("PING", String::from("pong")).await?;
+        event_emitter.emit("DateTime", copy).await?;
 
         event_emitter.remove_listener(&_listener_id);
 
@@ -524,5 +546,41 @@ mod async_event_emitter {
             .await
             .on("Hello", |v: String| async move { assert_eq!(&v, "world") });
         let _ = EVENT_EMITTER.lock().await.emit("Hello", "world").await;
+    }
+
+    // tests/listener_tests.rs
+
+    use crate::AsyncListener;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_async_listener() {
+        // Test cases for AsyncListener struct
+
+        // Basic test with default values
+        let listener = AsyncListener {
+            callback: Arc::new(|_| async {}.boxed()),
+            limit: None,
+            id: "1".to_string(),
+        };
+
+        assert_eq!(listener.limit, None);
+        assert_eq!(listener.id.clone(), "1");
+
+        // Test with custom values
+        let callback = Arc::new(|_| async {}.boxed());
+        let limit = Some(10);
+        let id = "my-id".to_string();
+
+        let listener = AsyncListener {
+            callback,
+            limit,
+            id: id.clone(),
+        };
+
+        assert_eq!(listener.limit, limit);
+        assert_eq!(listener.id, id);
+
+        // Add more test cases to cover edge cases
     }
 }
