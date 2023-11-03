@@ -16,6 +16,16 @@ jobs:
                  with:
                       toolchain: nightly
                       override: true
+               - uses: actions/cache@v3
+                 with:
+                      path: |
+                           ~/.cargo/bin/
+                           ~/.cargo/registry/index/
+                           ~/.cargo/registry/cache/
+                           ~/.cargo/git/db/
+                           target/
+                      key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-coverage
+
                - uses: actions-rs/cargo@v1
 
                  with:
@@ -35,4 +45,4 @@ jobs:
                  env:
                       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
                  with:
-                      directory: ${{steps.coverage.outputs.report}}
+                      files: coverage/*.lcov
