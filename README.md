@@ -1,5 +1,7 @@
 ### async-event-emitter
 [![CI](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/ci.yml)
+[![cov_ci](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/codecov.yml/badge.svg)](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/codecov.yml)
+[![codecov](https://codecov.io/gh/spencerjibz/async-event-emitter-rs/graph/badge.svg?token=WDGKRW604P)](https://codecov.io/gh/spencerjibz/async-event-emitter-rs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 an Async implementation of the [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs) crate
