@@ -362,4 +362,3 @@ impl fmt::Debug for AsyncEventEmitter {
             .finish()
     }
 }
-
