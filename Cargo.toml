@@ -1,6 +1,6 @@
 [package]
 name = "async-event-emitter"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Lightweight AsyncEventEmitter"
 authors = [ "Spencer Najib", "Dylan Kerler" ]
