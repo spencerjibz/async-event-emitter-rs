@@ -21,15 +21,15 @@ Events are in the form of (strings, value) and callbacks are in the form of clos
 #### Getting Started
 
 ```rust
-use async_event_emitter::AsyncEventEmitter;
-#[tokio::main]
-async fn main() {
-    let mut event_emitter = AsyncEventEmitter::new();
-    // This will print <"Hello world!"> whenever the <"Say Hello"> event is emitted
-    event_emitter.on("Say Hello", |_: ()| async move { println!("Hello world!") });
-    event_emitter.emit("Say Hello", ()).await.unwrap();
-    // >> "Hello world!"
-}
+    use async_event_emitter::AsyncEventEmitter;
+    #[tokio::main]
+    async fn main() {
+        let mut event_emitter = AsyncEventEmitter::new();
+        // This will print <"Hello world!"> whenever the <"Say Hello"> event is emitted
+        event_emitter.on("Say Hello", |_: ()| async move { println!("Hello world!") });
+        event_emitter.emit("Say Hello", ()).await.unwrap();
+        // >> "Hello world!"
+    }
 ```
 
 #### Basic Usage
@@ -40,7 +40,7 @@ A single EventEmitter instance can have listeners to values of multiple types.
 ```rust
     use async_event_emitter::AsyncEventEmitter as EventEmitter;
     use serde::{Deserialize, Serialize};
-    use
+
 
     #[tokio::main]
     async fn main() -> anyhow::Result<()> {
@@ -99,36 +99,36 @@ You'll likely want to have a single EventEmitter instance that can be shared acr
 After all, one of the main points of using an EventEmitter is to avoid passing down a value through several nested functions/types and having a global subscription service.
 
 ```rust
-// global_event_emitter.rs
-use async_event_emitter::AsyncEventEmitter;
-use futures::lock::Mutex;
-use lazy_static::lazy_static;
+        // global_event_emitter.rs
+        use async_event_emitter::AsyncEventEmitter;
+        use futures::lock::Mutex;
+        use lazy_static::lazy_static;
 
-// Use lazy_static! because the size of EventEmitter is not known at compile time
-lazy_static! {
-// Export the emitter with `pub` keyword
-pub static ref EVENT_EMITTER: Mutex<AsyncEventEmitter> = Mutex::new(AsyncEventEmitter::new());
-}
+        // Use lazy_static! because the size of EventEmitter is not known at compile time
+        lazy_static! {
+        // Export the emitter with `pub` keyword
+        pub static ref EVENT_EMITTER: Mutex<AsyncEventEmitter> = Mutex::new(AsyncEventEmitter::new());
+        }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // We need to maintain a lock through the mutex so we can avoid data races
-    EVENT_EMITTER
-        .lock()
-        .await
-        .on("Hello", |_: ()| async { println!("hello there!") });
-    EVENT_EMITTER.lock().await.emit("Hello", ()).await?;
+        #[tokio::main]
+        async fn main() -> anyhow::Result<()> {
+            // We need to maintain a lock through the mutex so we can avoid data races
+            EVENT_EMITTER
+                .lock()
+                .await
+                .on("Hello", |_: ()| async { println!("hello there!") });
+            EVENT_EMITTER.lock().await.emit("Hello", ()).await?;
 
-    Ok(())
-}
+            Ok(())
+        }
 
-async fn random_function() {
-    // When the <"Hello"> event is emitted in main.rs then print <"Random stuff!">
-    EVENT_EMITTER
-        .lock()
-        .await
-        .on("Hello", |_: ()| async { println!("Random stuff!") });
-}
+        async fn random_function() {
+            // When the <"Hello"> event is emitted in main.rs then print <"Random stuff!">
+            EVENT_EMITTER
+                .lock()
+                .await
+                .on("Hello", |_: ()| async { println!("Random stuff!") });
+        }
 
 ```
 
