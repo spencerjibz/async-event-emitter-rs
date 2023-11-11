@@ -41,15 +41,15 @@ A single EventEmitter instance can have listeners to values of multiple types.
     use async_event_emitter::AsyncEventEmitter as EventEmitter;
     use serde::{Deserialize, Serialize};
 
-
     #[tokio::main]
     async fn main() -> anyhow::Result<()> {
         let mut event_emitter = EventEmitter::new();
-        event_emitter.on("Add three", |_number: f32| async move {
-            //println!("{}", number + 3.0)
+        event_emitter.on("Add three", |number: f64| async move {
+            println!("{}", number + 3.0)
         });
-        event_emitter.emit("Add three", 5.0).await?;
-        event_emitter.emit("Add three", 4.0).await?;
+
+        event_emitter.emit("Add three", 5.0_f64).await?;
+        event_emitter.emit("Add three", 4.0_f64).await?;
 
         // >> "8.0"
         // >> "7.0"
@@ -61,9 +61,10 @@ A single EventEmitter instance can have listeners to values of multiple types.
             day: String,
         }
 
-        event_emitter.on("LOG_DATE", |_date: Date| async move {
-            //println!("Month: {} - Day: {}", date.month, date.day)
-        });
+        event_emitter.on(
+            "LOG_DATE",
+            |_date: Date| async move { println!("{_date:?}") },
+        );
         event_emitter
             .emit(
                 "LOG_DATE",
@@ -73,6 +74,16 @@ A single EventEmitter instance can have listeners to values of multiple types.
                 },
             )
             .await?;
+        event_emitter
+            .emit(
+                "LOG_DATE",
+                Date {
+                    month: "February".to_string(),
+                    day: "Tuesday".to_string(),
+                },
+            )
+            .await?;
+        // >> "Month: January - Day: Tuesday"
         // >> "Month: January - Day: Tuesday"
 
         Ok(())
