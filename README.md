@@ -22,15 +22,13 @@ Events are in the form of (strings, value) and callbacks are in the form of clos
 
 ```rust
 use async_event_emitter::AsyncEventEmitter;
-
 #[tokio::main]
 async fn main() {
-let mut event_emitter = AsyncEventEmitter::new();
-// This will print <"Hello world!"> whenever the <"Say Hello"> event is emitted
-event_emitter.on("Say Hello", |_:()|  async move { println!("Hello world!")});
-event_emitter.emit("Say Hello", ()).await;
-// >> "Hello world!"
-
+    let mut event_emitter = AsyncEventEmitter::new();
+    // This will print <"Hello world!"> whenever the <"Say Hello"> event is emitted
+    event_emitter.on("Say Hello", |_: ()| async move { println!("Hello world!") });
+    event_emitter.emit("Say Hello", ()).await.unwrap();
+    // >> "Hello world!"
 }
 ```
 
@@ -84,14 +82,14 @@ A single EventEmitter instance can have listeners to values of multiple types.
 Removing listeners is also easy
 
 ```rust
-use async_event_emitter::AsyncEventEmitter as EventEmitter;
-let mut event_emitter = EventEmitter::new();
+    use async_event_emitter::AsyncEventEmitter as EventEmitter;
+    let mut event_emitter = EventEmitter::new();
 
-let listener_id = event_emitter.on("Hello", |_: ()|  async {println!("Hello World")});
-match event_emitter.remove_listener(&listener_id) {
-Some(listener_id) => print!("Removed event listener!"),
-None => print!("No event listener of that id exists")
-}
+    let listener_id = event_emitter.on("Hello", |_: ()| async { println!("Hello World") });
+    match event_emitter.remove_listener(&listener_id) {
+        Some(listener_id) => println!("Removed event listener! {listener_id}"),
+        None => println!("No event listener of that id exists"),
+    }
 ```
 
 #### Creating a Global EventEmitter
