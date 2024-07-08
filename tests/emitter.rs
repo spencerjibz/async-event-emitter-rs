@@ -45,7 +45,7 @@ mod async_event_emitter {
         });
         event_emitter.emit("LOG_DATE", date).await?;
         println!("{:#?}", event_emitter);
-        assert!(event_emitter.listeners.get("LOG_DATE").is_some());
+        assert!(event_emitter.listeners.contains_key("LOG_DATE"));
 
         Ok(())
     }

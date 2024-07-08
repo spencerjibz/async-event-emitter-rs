@@ -149,15 +149,10 @@ impl AsyncEventEmitter {
     ///
     /// // Emits the <"Some event"> event and a value <"Hello programmer">
     /// // The value can be of any type as long as it implements the serde Serialize trait
-    ///   tokio_test::block_on(async {
-    ///    event_emitter.emit("Some event", "Hello programmer!").await;
-    ///     
-    ///   
-    ///     })
-    ///   
+    /// tokio_test::block_on(async {
+    ///     event_emitter.emit("Some event", "Hello programmer!").await;
+    /// })
     /// ```
-    ///
-    ///
 
     pub async fn emit<'a, T>(&mut self, event: &str, value: T) -> anyhow::Result<()>
     where
@@ -208,17 +203,15 @@ impl AsyncEventEmitter {
     /// # Example
     ///
     /// ```
-    ///use async_event_emitter::AsyncEventEmitter;
+    /// use async_event_emitter::AsyncEventEmitter;
     /// let mut event_emitter = AsyncEventEmitter::new();
-    /// let listener_id = event_emitter.on("Some event", |value: ()|  async {println!("Hello world!")});
+    /// let listener_id =
+    ///     event_emitter.on("Some event", |value: ()| async { println!("Hello world!") });
     /// println!("{:?}", event_emitter.listeners);
     ///
     /// // Removes the listener that we just added
     /// event_emitter.remove_listener(&listener_id);
-    ///
     /// ```
-    ///
-    ///
 
     pub fn remove_listener(&mut self, id_to_delete: &str) -> Option<String> {
         for (_, event_listeners) in self.listeners.iter_mut() {
@@ -307,7 +300,6 @@ impl AsyncEventEmitter {
     /// event_emitter.emit("Some event", ());
     /// // >> <Nothing happens here since listener was deleted>
     /// ```
-    ///
     pub fn once<F, T, C>(&mut self, event: &str, callback: C) -> String
     where
         for<'de> T: Deserialize<'de> + std::fmt::Debug,
@@ -330,7 +322,6 @@ impl AsyncEventEmitter {
     /// // The type of the `value` parameter for the closure MUST be specified and, if you plan to use the `value`, the `value` type
     /// // MUST also match the type that is being emitted (here we just use a throwaway `()` type since we don't care about using the `value`)
     /// event_emitter.on("Some event", |value: ()| async { println!("Hello world!")});
-    ///
     /// ```
     pub fn on<F, T, C>(&mut self, event: &str, callback: C) -> String
     where
