@@ -113,11 +113,9 @@
         License: MIT
 */
 
+use futures::future::{BoxFuture, Future, FutureExt};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
-use tokio::task::{self};
-
-use futures::future::{BoxFuture, Future, FutureExt};
 use uuid::Uuid;
 
 pub type AsyncCB = dyn Fn(Vec<u8>) -> BoxFuture<'static, ()> + Send + Sync + 'static;
@@ -169,14 +167,34 @@ impl AsyncEventEmitter {
 
                 match listener.limit {
                     None => {
-                        callback_handlers.push(task::spawn(async move {
-                            callback(bytes).await;
+                        cfg_if::cfg_if! {
+                          if  #[cfg(feature = "use-async-std")] {
+                            use async_std::task::spawn;
+                          callback_handlers.push(spawn(async move {
+                         callback(bytes).await;
                         }));
+                          } else {
+                             use tokio::spawn;
+                         callback_handlers
+                             .push(spawn(async move { callback(bytes).await }));
+                          }
+
+                         };
                     }
                     Some(limit) => {
                         if limit != 0 {
-                            callback_handlers
-                                .push(task::spawn(async move { callback(bytes).await }));
+                            cfg_if::cfg_if! {
+                              if  #[cfg(feature = "use-async-std")] {
+                              callback_handlers.push(async_std::task::spawn(async move {
+                             callback(bytes).await;
+                            }));
+                              } else {
+                             callback_handlers
+                                 .push(tokio::spawn(async move { callback(bytes).await }));
+                              }
+
+                             };
+
                             listener.limit = Some(limit - 1);
                         } else {
                             listeners_to_remove.push(index);
@@ -192,7 +210,7 @@ impl AsyncEventEmitter {
         }
 
         for handles in callback_handlers {
-            handles.await?;
+            handles.await;
         }
 
         Ok(())
