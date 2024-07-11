@@ -20,7 +20,7 @@ jobs:
                       strip_v: true
 
                - name: Update version in cargo.tooml
-                 uses: kaachod/toml-editor@v2
+                 uses: colathro/toml-editor@1.1.1
                  with:
                       file: Cargo.toml
                       key: package.version
