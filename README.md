@@ -14,7 +14,7 @@ Events are in the form of (strings, value) and callbacks are in the form of clos
 #### Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
 
 -    Emitted values should implement an extra trait (Debug) in addition to Serde's Serialize and Deserialize.
--    This is an async implementation, currently limited to tokio, but async-std will be added soon under a feature flag.
+-    This is an async implementation, not limited to tokio, but async-std is supported  under the ``` use-async-std ``` feature flag.
 -    The listener methods **_(on and once)_** take a callback that returns a future instead of a merely a closure.
 -    The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
 
@@ -142,6 +142,15 @@ After all, one of the main points of using an EventEmitter is to avoid passing d
         }
 
 ```
+ #### Using async-std instead of tokio
+Tokio is the default  runtime for this library but async-std support can be able enabled by disabling default-features on the crate and enable the ```use-async-std``` feature.
+     <br>
+**Note**: Use simply replace tokio::main with async-std::main and tokio::test with async-std::test (provided you've enabled the "attributes" feature on the crate.
+
+ #### Testing
+ Run the tests on this crate with all-features enabled as follows:
+       ``` cargo test --all-features```
+
 
 #### License
 
