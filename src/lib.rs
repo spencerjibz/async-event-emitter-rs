@@ -6,10 +6,9 @@
         Allows you to subscribe to events with callbacks and also fire those events.
         Events are in the form of (strings, value) and callbacks are in the form of closures that take in a value parameter;
 
-
         ## Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
         - Emitted values should implement an extra trait (Debug) in addition to Serde's Serialize and Deserialize.
-        - This is an async implementation, currently limited to tokio, but  async-std will be added soon under a feature flag.
+        - This is an async implementation, not limited to tokio, but also supports async-std  under the ```use-async-std``` feature flag.
         - The listener methods ***(on and once)*** take a callback that returns a future instead of a merely a closure.
         - The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
 
@@ -18,7 +17,6 @@
 
         ```
         use async_event_emitter::AsyncEventEmitter;
-
         #[tokio::main]
         async fn main() {
         let mut event_emitter = AsyncEventEmitter::new();
@@ -29,9 +27,7 @@
 
         }
         ```
-
         ## Basic Usage
-
         We can emit and listen to values of any type so long as they implement  the Debug trait and serde's Serialize and Deserialize traits.
         A single EventEmitter instance can have listeners to values of multiple types.
 
@@ -107,17 +103,23 @@
             // When the <"Hello"> event is emitted in main.rs then print <"Random stuff!">
             EVENT_EMITTER.lock().await.on("Hello", |_: ()| async { println!("Random stuff!")});
         }
-
         ```
+     ## Using async-std instead of tokio
+      Tokio is the default  runtime for this library but async-std support can be able enabled by disabling default-features on the crate and enable the ```use-async-std``` feature.
+     <br>
+      **Note**: Use simply replace tokio::main with async-std::main and tokio::test with async-std::test (provided you've enabled the "attributes" feature on the crate.
+
+     ### Testing
+       Run the tests on this crate with all-features enabled as follows:
+       ``` cargo test --all-features```
+
 
         License: MIT
 */
 
+use futures::future::{BoxFuture, Future, FutureExt};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
-use tokio::task::{self};
-
-use futures::future::{BoxFuture, Future, FutureExt};
 use uuid::Uuid;
 
 pub type AsyncCB = dyn Fn(Vec<u8>) -> BoxFuture<'static, ()> + Send + Sync + 'static;
@@ -149,20 +151,20 @@ impl AsyncEventEmitter {
     ///
     /// // Emits the <"Some event"> event and a value <"Hello programmer">
     /// // The value can be of any type as long as it implements the serde Serialize trait
-    ///   tokio_test::block_on(async {
-    ///    event_emitter.emit("Some event", "Hello programmer!").await;
-    ///     
-    ///   
-    ///     })
-    ///   
+    /// tokio_test::block_on(async {
+    ///     event_emitter.emit("Some event", "Hello programmer!").await;
+    /// })
     /// ```
-    ///
-    ///
 
     pub async fn emit<'a, T>(&mut self, event: &str, value: T) -> anyhow::Result<()>
     where
         T: Serialize + Deserialize<'a> + Send + Sync + 'a + std::fmt::Debug,
     {
+        #[cfg(feature = "use-async-std")]
+        use async_std::task::spawn;
+        #[cfg(not(feature = "use-async-std"))]
+        use tokio::spawn;
+
         let mut callback_handlers: Vec<_> = Vec::new();
 
         if let Some(listeners) = self.listeners.get_mut(event) {
@@ -174,14 +176,12 @@ impl AsyncEventEmitter {
 
                 match listener.limit {
                     None => {
-                        callback_handlers.push(task::spawn(async move {
-                            callback(bytes).await;
-                        }));
+                        callback_handlers.push(spawn(async move { callback(bytes).await }));
                     }
                     Some(limit) => {
                         if limit != 0 {
-                            callback_handlers
-                                .push(task::spawn(async move { callback(bytes).await }));
+                            callback_handlers.push(spawn(async move { callback(bytes).await }));
+
                             listener.limit = Some(limit - 1);
                         } else {
                             listeners_to_remove.push(index);
@@ -197,7 +197,7 @@ impl AsyncEventEmitter {
         }
 
         for handles in callback_handlers {
-            handles.await?;
+            _ = handles.await;
         }
 
         Ok(())
@@ -208,17 +208,15 @@ impl AsyncEventEmitter {
     /// # Example
     ///
     /// ```
-    ///use async_event_emitter::AsyncEventEmitter;
+    /// use async_event_emitter::AsyncEventEmitter;
     /// let mut event_emitter = AsyncEventEmitter::new();
-    /// let listener_id = event_emitter.on("Some event", |value: ()|  async {println!("Hello world!")});
+    /// let listener_id =
+    ///     event_emitter.on("Some event", |value: ()| async { println!("Hello world!") });
     /// println!("{:?}", event_emitter.listeners);
     ///
     /// // Removes the listener that we just added
     /// event_emitter.remove_listener(&listener_id);
-    ///
     /// ```
-    ///
-    ///
 
     pub fn remove_listener(&mut self, id_to_delete: &str) -> Option<String> {
         for (_, event_listeners) in self.listeners.iter_mut() {
@@ -307,7 +305,6 @@ impl AsyncEventEmitter {
     /// event_emitter.emit("Some event", ());
     /// // >> <Nothing happens here since listener was deleted>
     /// ```
-    ///
     pub fn once<F, T, C>(&mut self, event: &str, callback: C) -> String
     where
         for<'de> T: Deserialize<'de> + std::fmt::Debug,
@@ -330,7 +327,6 @@ impl AsyncEventEmitter {
     /// // The type of the `value` parameter for the closure MUST be specified and, if you plan to use the `value`, the `value` type
     /// // MUST also match the type that is being emitted (here we just use a throwaway `()` type since we don't care about using the `value`)
     /// event_emitter.on("Some event", |value: ()| async { println!("Hello world!")});
-    ///
     /// ```
     pub fn on<F, T, C>(&mut self, event: &str, callback: C) -> String
     where
