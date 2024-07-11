@@ -6,10 +6,9 @@
         Allows you to subscribe to events with callbacks and also fire those events.
         Events are in the form of (strings, value) and callbacks are in the form of closures that take in a value parameter;
 
-
         ## Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
         - Emitted values should implement an extra trait (Debug) in addition to Serde's Serialize and Deserialize.
-        - This is an async implementation, currently limited to tokio, but  async-std will be added soon under a feature flag.
+        - This is an async implementation, not limited to tokio, but also supports async-std  under the ```use-async-std``` feature flag.
         - The listener methods ***(on and once)*** take a callback that returns a future instead of a merely a closure.
         - The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
 
