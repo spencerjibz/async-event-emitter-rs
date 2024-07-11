@@ -18,7 +18,6 @@
 
         ```
         use async_event_emitter::AsyncEventEmitter;
-
         #[tokio::main]
         async fn main() {
         let mut event_emitter = AsyncEventEmitter::new();
@@ -29,9 +28,7 @@
 
         }
         ```
-
         ## Basic Usage
-
         We can emit and listen to values of any type so long as they implement  the Debug trait and serde's Serialize and Deserialize traits.
         A single EventEmitter instance can have listeners to values of multiple types.
 
@@ -107,8 +104,16 @@
             // When the <"Hello"> event is emitted in main.rs then print <"Random stuff!">
             EVENT_EMITTER.lock().await.on("Hello", |_: ()| async { println!("Random stuff!")});
         }
-
         ```
+     ## Using async-std instead of tokio
+      Tokio is the default  runtime for this library but async-std support can be able enabled by disabling default-features on the crate and enable the ```use-async-std``` feature.
+     <br>
+      **Note**: Use simply replace tokio::main with async-std::main and tokio::test with async-std::test (provided you've enabled the "attributes" feature on the crate.
+
+     ### Testing
+       Run the tests on this crate with all-features enabled as follows:
+       ``` cargo test --all-features```
+
 
         License: MIT
 */
@@ -156,6 +161,11 @@ impl AsyncEventEmitter {
     where
         T: Serialize + Deserialize<'a> + Send + Sync + 'a + std::fmt::Debug,
     {
+        #[cfg(feature = "use-async-std")]
+        use async_std::task::spawn;
+        #[cfg(not(feature = "use-async-std"))]
+        use tokio::spawn;
+
         let mut callback_handlers: Vec<_> = Vec::new();
 
         if let Some(listeners) = self.listeners.get_mut(event) {
@@ -167,33 +177,11 @@ impl AsyncEventEmitter {
 
                 match listener.limit {
                     None => {
-                        cfg_if::cfg_if! {
-                          if  #[cfg(feature = "use-async-std")] {
-                            use async_std::task::spawn;
-                          callback_handlers.push(spawn(async move {
-                         callback(bytes).await;
-                        }));
-                          } else {
-                             use tokio::spawn;
-                         callback_handlers
-                             .push(spawn(async move { callback(bytes).await }));
-                          }
-
-                         };
+                        callback_handlers.push(spawn(async move { callback(bytes).await }));
                     }
                     Some(limit) => {
                         if limit != 0 {
-                            cfg_if::cfg_if! {
-                              if  #[cfg(feature = "use-async-std")] {
-                              callback_handlers.push(async_std::task::spawn(async move {
-                             callback(bytes).await;
-                            }));
-                              } else {
-                             callback_handlers
-                                 .push(tokio::spawn(async move { callback(bytes).await }));
-                              }
-
-                             };
+                            callback_handlers.push(spawn(async move { callback(bytes).await }));
 
                             listener.limit = Some(limit - 1);
                         } else {
@@ -210,7 +198,7 @@ impl AsyncEventEmitter {
         }
 
         for handles in callback_handlers {
-            handles.await;
+            _ = handles.await;
         }
 
         Ok(())
