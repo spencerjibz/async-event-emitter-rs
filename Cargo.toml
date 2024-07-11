@@ -8,7 +8,7 @@ keywords = ["event-emitter", "tokio", "async-rust", "futures", "bincode"]
 license = "MIT"
 repository = "https://github.com/spencerjibz/async-event-emitter-rs"
 homepage = "https://github.com/spencerjibz/async-event-emitter-rs"
-categories = ["asynchronous", "event-emitters", "web-like"]
+categories = ["asynchronous","web-programming"]
 readme = "./README.md"
 
 [dependencies]
