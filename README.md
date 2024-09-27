@@ -143,7 +143,7 @@ After all, one of the main points of using an EventEmitter is to avoid passing d
 
 ```
  #### Using async-std instead of tokio
-Tokio is the default  runtime for this library but async-std support can be able enabled by disabling default-features on the crate and enable the ```use-async-std``` feature.
+Tokio is the default  runtime for this library but async-std support can be able enabled by disabling default-features on the crate and enabling the ```use-async-std``` feature.
      <br>
 **Note**: Use simply replace tokio::main with async-std::main and tokio::test with async-std::test (provided you've enabled the "attributes" feature on the crate.
 
