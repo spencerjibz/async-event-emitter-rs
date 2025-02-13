@@ -19,7 +19,7 @@
         use async_event_emitter::AsyncEventEmitter;
         #[tokio::main]
         async fn main() {
-        let mut event_emitter = AsyncEventEmitter::new();
+        let event_emitter = AsyncEventEmitter::new();
         // This will print <"Hello world!"> whenever the <"Say Hello"> event is emitted
         event_emitter.on("Say Hello", |_:()|  async move { println!("Hello world!")});
         event_emitter.emit("Say Hello", ()).await;
@@ -36,7 +36,7 @@
         use serde::{Deserialize, Serialize};
         #[tokio::main]
         async fn main () {
-        let mut event_emitter = EventEmitter::new();
+        let event_emitter = EventEmitter::new();
         event_emitter.on("Add three", |number: f32| async move  {println!("{}", number + 3.0)});
         event_emitter.emit("Add three", 5.0 as f32).await;
         event_emitter.emit("Add three", 4.0 as f32).await;
@@ -66,7 +66,7 @@
 
         ```
         use async_event_emitter::AsyncEventEmitter as EventEmitter;
-        let mut event_emitter = EventEmitter::new();
+        let event_emitter = EventEmitter::new();
 
         let listener_id = event_emitter.on("Hello", |_: ()|  async {println!("Hello World")});
         match event_emitter.remove_listener(&listener_id) {
@@ -83,25 +83,23 @@
         ```
         // global_event_emitter.rs
         use lazy_static::lazy_static;
-        use futures::lock::Mutex;
         use async_event_emitter::AsyncEventEmitter;
 
         // Use lazy_static! because the size of EventEmitter is not known at compile time
         lazy_static! {
             // Export the emitter with `pub` keyword
-            pub static ref EVENT_EMITTER: Mutex<AsyncEventEmitter> = Mutex::new(AsyncEventEmitter::new());
+            pub static ref EVENT_EMITTER: AsyncEventEmitter = AsyncEventEmitter::new();
         }
 
         #[tokio::main]
         async fn main() {
-            // We need to maintain a lock through the mutex so we can avoid data races
-            EVENT_EMITTER.lock().await.on("Hello", |_:()|  async {println!("hello there!")});
-            EVENT_EMITTER.lock().await.emit("Hello", ()).await;
+            EVENT_EMITTER.on("Hello", |_:()|  async {println!("hello there!")});
+            EVENT_EMITTER.emit("Hello", ()).await;
         }
 
         async fn random_function() {
             // When the <"Hello"> event is emitted in main.rs then print <"Random stuff!">
-            EVENT_EMITTER.lock().await.on("Hello", |_: ()| async { println!("Random stuff!")});
+            EVENT_EMITTER.on("Hello", |_: ()| async { println!("Random stuff!")});
         }
         ```
      ## Using async-std instead of tokio
@@ -117,13 +115,12 @@
         License: MIT
 */
 
+use dashmap::DashMap;
 use futures::future::{BoxFuture, Future, FutureExt};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
 use uuid::Uuid;
-
 pub type AsyncCB = dyn Fn(Vec<u8>) -> BoxFuture<'static, ()> + Send + Sync + 'static;
-
+use std::sync::Arc;
 #[derive(Clone)]
 pub struct AsyncListener {
     pub callback: Arc<AsyncCB>,
@@ -133,7 +130,7 @@ pub struct AsyncListener {
 
 #[derive(Default, Clone)]
 pub struct AsyncEventEmitter {
-    pub listeners: HashMap<String, Vec<AsyncListener>>,
+    pub listeners: DashMap<String, Vec<AsyncListener>>,
 }
 
 impl AsyncEventEmitter {
@@ -147,7 +144,7 @@ impl AsyncEventEmitter {
     ///
     /// ```
     /// use async_event_emitter::AsyncEventEmitter;
-    /// let mut event_emitter = AsyncEventEmitter::new();
+    /// let event_emitter = AsyncEventEmitter::new();
     ///
     /// // Emits the <"Some event"> event and a value <"Hello programmer">
     /// // The value can be of any type as long as it implements the serde Serialize trait
@@ -155,8 +152,7 @@ impl AsyncEventEmitter {
     ///     event_emitter.emit("Some event", "Hello programmer!").await;
     /// })
     /// ```
-
-    pub async fn emit<'a, T>(&mut self, event: &str, value: T) -> anyhow::Result<()>
+    pub async fn emit<'a, T>(&self, event: &str, value: T) -> anyhow::Result<()>
     where
         T: Serialize + Deserialize<'a> + Send + Sync + 'a + std::fmt::Debug,
     {
@@ -167,7 +163,7 @@ impl AsyncEventEmitter {
 
         let mut callback_handlers: Vec<_> = Vec::new();
 
-        if let Some(listeners) = self.listeners.get_mut(event) {
+        if let Some(ref mut listeners) = self.listeners.get_mut(event) {
             let mut listeners_to_remove: Vec<usize> = Vec::new();
             for (index, listener) in listeners.iter_mut().enumerate() {
                 let bytes: Vec<u8> = bincode::serialize(&value)?;
@@ -209,7 +205,7 @@ impl AsyncEventEmitter {
     ///
     /// ```
     /// use async_event_emitter::AsyncEventEmitter;
-    /// let mut event_emitter = AsyncEventEmitter::new();
+    /// let event_emitter = AsyncEventEmitter::new();
     /// let listener_id =
     ///     event_emitter.on("Some event", |value: ()| async { println!("Hello world!") });
     /// println!("{:?}", event_emitter.listeners);
@@ -217,9 +213,9 @@ impl AsyncEventEmitter {
     /// // Removes the listener that we just added
     /// event_emitter.remove_listener(&listener_id);
     /// ```
-
-    pub fn remove_listener(&mut self, id_to_delete: &str) -> Option<String> {
-        for (_, event_listeners) in self.listeners.iter_mut() {
+    pub fn remove_listener(&self, id_to_delete: &str) -> Option<String> {
+        for mut mut_ref in self.listeners.iter_mut() {
+            let event_listeners = mut_ref.value_mut();
             if let Some(index) = event_listeners
                 .iter()
                 .position(|listener| listener.id == id_to_delete)
@@ -239,12 +235,10 @@ impl AsyncEventEmitter {
     ///
     /// ```
     /// use async_event_emitter::AsyncEventEmitter;
-    /// let mut event_emitter = AsyncEventEmitter::new();
-    ///
+    /// let event_emitter = AsyncEventEmitter::new();
     /// // Listener will be executed 3 times. After the third time, the listener will be deleted.
-    ///
     /// event_emitter.on_limited("Some event", Some(3), |value: ()| async{ println!("Hello world!")});
-    /// tokio_test::block_on( async{
+    /// tokio_test::block_on( async {
     /// event_emitter.emit("Some event", ()).await; // 1 >> "Hello world!"
     /// event_emitter.emit("Some event", ()).await; // 2 >> "Hello world!"
     /// event_emitter.emit("Some event", ()).await; // 3 >> "Hello world!"
@@ -252,8 +246,7 @@ impl AsyncEventEmitter {
     ///
     /// });
     /// ```
-
-    pub fn on_limited<F, T, C>(&mut self, event: &str, limit: Option<u64>, callback: C) -> String
+    pub fn on_limited<F, T, C>(&self, event: &str, limit: Option<u64>, callback: C) -> String
     where
         for<'de> T: Deserialize<'de> + std::fmt::Debug,
         C: Fn(T) -> F + Send + Sync + 'static,
@@ -278,7 +271,7 @@ impl AsyncEventEmitter {
         };
 
         match self.listeners.get_mut(event) {
-            Some(callbacks) => {
+            Some(ref mut callbacks) => {
                 callbacks.push(listener);
             }
             None => {
@@ -296,7 +289,7 @@ impl AsyncEventEmitter {
     ///
     /// ```
     /// use async_event_emitter::AsyncEventEmitter;
-    /// let mut event_emitter = AsyncEventEmitter::new();
+    /// let  event_emitter = AsyncEventEmitter::new();
     ///
     /// event_emitter.once("Some event", |value: ()| async {println!("Hello world!")});
     /// event_emitter.emit("Some event", ()); // First event is emitted and the listener's callback is called once
@@ -305,7 +298,7 @@ impl AsyncEventEmitter {
     /// event_emitter.emit("Some event", ());
     /// // >> <Nothing happens here since listener was deleted>
     /// ```
-    pub fn once<F, T, C>(&mut self, event: &str, callback: C) -> String
+    pub fn once<F, T, C>(&self, event: &str, callback: C) -> String
     where
         for<'de> T: Deserialize<'de> + std::fmt::Debug,
         C: Fn(T) -> F + Send + Sync + 'static,
@@ -321,14 +314,14 @@ impl AsyncEventEmitter {
     ///
     /// ```
     /// use async_event_emitter::AsyncEventEmitter;
-    /// let mut event_emitter = AsyncEventEmitter::new();
+    /// let  event_emitter = AsyncEventEmitter::new();
     ///
     /// // This will print <"Hello world!"> whenever the <"Some event"> event is emitted
     /// // The type of the `value` parameter for the closure MUST be specified and, if you plan to use the `value`, the `value` type
     /// // MUST also match the type that is being emitted (here we just use a throwaway `()` type since we don't care about using the `value`)
     /// event_emitter.on("Some event", |value: ()| async { println!("Hello world!")});
     /// ```
-    pub fn on<F, T, C>(&mut self, event: &str, callback: C) -> String
+    pub fn on<F, T, C>(&self, event: &str, callback: C) -> String
     where
         for<'de> T: Deserialize<'de> + std::fmt::Debug,
         C: Fn(T) -> F + Send + Sync + 'static,
