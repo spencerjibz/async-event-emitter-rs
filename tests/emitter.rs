@@ -1,11 +1,3 @@
-mod tester {
-    /// use
-    #[cfg(feature = "use-async-std")]
-    pub use async_std::test;
-    #[cfg(not(feature = "use-async-std"))]
-    pub use tokio::test;
-}
-
 #[cfg(test)]
 mod async_event_emitter {
     use anyhow::Ok;
@@ -33,7 +25,7 @@ mod async_event_emitter {
     #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
     struct DateTime(Date, Time);
 
-    #[tester::test]
+    #[tokio::test]
     async fn test_async_event() -> anyhow::Result<()> {
         let event_emitter = AsyncEventEmitter::new();
 
@@ -56,7 +48,7 @@ mod async_event_emitter {
         Ok(())
     }
 
-    #[tester::test]
+    #[tokio::test]
     async fn test_emit_multiple_args() -> anyhow::Result<()> {
         let event_emitter = AsyncEventEmitter::new();
         let time = Time {
@@ -84,7 +76,7 @@ mod async_event_emitter {
         Ok(())
     }
 
-    #[tester::test]
+    #[tokio::test]
     async fn listens_once_with_multiple_emits() -> anyhow::Result<()> {
         let event_emitter = AsyncEventEmitter::new();
         let name = "LOG_DATE".to_string();
@@ -124,7 +116,7 @@ mod async_event_emitter {
 
         Ok(())
     }
-    #[tester::test]
+    #[tokio::test]
     async fn remove_listeners() -> anyhow::Result<()> {
         let event_emitter = AsyncEventEmitter::new();
         let dt = DateTime(
@@ -169,7 +161,7 @@ mod async_event_emitter {
         Ok(())
     }
 
-    #[tester::test]
+    #[tokio::test]
     #[should_panic]
     async fn panics_on_different_values_for_same_event() {
         let event_emitter = AsyncEventEmitter::new();
@@ -182,7 +174,7 @@ mod async_event_emitter {
             .unwrap();
         event_emitter.emit("value", 12).await.unwrap();
     }
-    #[tester::test]
+    #[tokio::test]
 
     async fn global_event_emitter() {
         EVENT_EMITTER.on("Hello", |v: String| async move { assert_eq!(&v, "world") });
@@ -191,7 +183,6 @@ mod async_event_emitter {
 
     // tests/listener_tests.rs
 
-    use crate::tester;
     use async_event_emitter::AsyncListener;
 
     #[test]

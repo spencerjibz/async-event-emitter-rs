@@ -12,10 +12,12 @@ Allows you to subscribe to events with callbacks and also fire those events.
 Events are in the form of (strings, value) and callbacks are in the form of closures that take in a value parameter;
 
 #### Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
--    This is an async implementation, not limited to tokio, but async-std is supported  under the ``` use-async-std ``` feature flag.
--    The listener methods **_(on and once)_** take a callback that returns a future instead of a merely a closure.
--    The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
--    Thread Safe and can be used lock-free (supports interior mutability).
+ - This is an async implementation that works for all common async runtimes (Tokio, async-std and smol)
+ - The listener methods ***(on and once)*** take a callback that returns a future instead of a merely a closure.
+ - The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
+ - This emitter is thread safe and can  also be used lock-free (supports interior mutability).
+
+ ***Note***: To use strict return and event types, use [typed-emitter](https://crates.io/crates/typed-emitter), that crate solves [this issue](https://github.com/spencerjibz/async-event-emitter-rs/issues/31) too.  
 
 #### Getting Started
 
@@ -121,7 +123,6 @@ After all, one of the main points of using an EventEmitter is to avoid passing d
 
         #[tokio::main]
         async fn main() -> anyhow::Result<()> {
-            // We need to maintain a lock through the mutex so we can avoid data races
             EVENT_EMITTER.on("Hello", |_: ()| async { println!("hello there!") });
             EVENT_EMITTER.emit("Hello", ()).await?;
 
@@ -135,10 +136,8 @@ After all, one of the main points of using an EventEmitter is to avoid passing d
         }
 
 ```
- #### Using async-std instead of tokio
-Tokio is the default  runtime for this library but async-std support can be able enabled by disabling default-features on the crate and enabling the ```use-async-std``` feature.
-     <br>
-**Note**: Use simply replace tokio::main with async-std::main and tokio::test with async-std::test (provided you've enabled the "attributes" feature on the crate.
+#### Usage with other runtimes
+ Check out the examples from the [typed version of this crate](https://docs.rs/typed-emitter/0.1.2/typed_emitter/#getting-started), just replace the emntter type.
 
  #### Testing
  Run the tests on this crate with all-features enabled as follows:

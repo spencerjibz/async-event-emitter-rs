@@ -1,17 +1,18 @@
 /*!
 
-
         an Async implementation of the  [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs) crate
 
         Allows you to subscribe to events with callbacks and also fire those events.
         Events are in the form of (strings, value) and callbacks are in the form of closures that take in a value parameter;
 
         ## Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
-        - This is an async implementation, not limited to tokio, but also supports async-std  under the ```use-async-std``` feature flag.
+        - This is an async implementation that works for all common async runtimes (Tokio, async-std and smol)
         - The listener methods ***(on and once)*** take a callback that returns a future instead of a merely a closure.
         - The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
-        - Thread Safe and can be used lock-free (supports interior mutability).
+        - This emitter is thread safe and can  also be used lock-free (supports interior mutability).
 
+
+        ***Note***: To use strict return and event types, use [typed-emitter](https://crates.io/crates/typed-emitter), that crate solves [this issue](https://github.com/spencerjibz/async-event-emitter-rs/issues/31) too.
 
         ## Getting Started
 
@@ -102,10 +103,8 @@
             EVENT_EMITTER.on("Hello", |_: ()| async { println!("Random stuff!")});
         }
         ```
-     ## Using async-std instead of tokio
-      Tokio is the default  runtime for this library but async-std support can be able enabled by disabling default-features on the crate and enable the ```use-async-std``` feature.
-     <br>
-      **Note**: Use simply replace tokio::main with async-std::main and tokio::test with async-std::test (provided you've enabled the "attributes" feature on the crate.
+     ### Usage with other runtimes
+     Check out the examples from the [typed version of this crate](https://docs.rs/typed-emitter/0.1.2/typed_emitter/#getting-started), just replace the emntter type.
 
      ### Testing
        Run the tests on this crate with all-features enabled as follows:
@@ -117,6 +116,8 @@
 
 use dashmap::DashMap;
 use futures::future::{BoxFuture, Future, FutureExt};
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 pub type AsyncCB = dyn Fn(Vec<u8>) -> BoxFuture<'static, ()> + Send + Sync + 'static;
@@ -142,26 +143,24 @@ impl AsyncEventEmitter {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust
     /// use async_event_emitter::AsyncEventEmitter;
-    /// let event_emitter = AsyncEventEmitter::new();
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let event_emitter = AsyncEventEmitter::new();
     ///
-    /// // Emits the <"Some event"> event and a value <"Hello programmer">
-    /// // The value can be of any type as long as it implements the serde Serialize trait
-    /// tokio_test::block_on(async {
+    ///     // Emits the <"Some event"> event and a value <"Hello programmer">
+    ///     // The value can be of any type as long as it implements the serde Serialize trait
     ///     event_emitter.emit("Some event", "Hello programmer!").await;
-    /// })
+    ///
+    ///     Ok(())
+    /// }
     /// ```
     pub async fn emit<'a, T>(&self, event: &str, value: T) -> anyhow::Result<()>
     where
         T: Serialize + Deserialize<'a> + Send + Sync + 'a,
     {
-        #[cfg(feature = "use-async-std")]
-        use async_std::task::spawn;
-        #[cfg(not(feature = "use-async-std"))]
-        use tokio::spawn;
-
-        let mut callback_handlers: Vec<_> = Vec::new();
+        let mut futures: FuturesUnordered<_> = FuturesUnordered::new();
 
         if let Some(ref mut listeners) = self.listeners.get_mut(event) {
             let mut listeners_to_remove: Vec<usize> = Vec::new();
@@ -172,11 +171,11 @@ impl AsyncEventEmitter {
 
                 match listener.limit {
                     None => {
-                        callback_handlers.push(spawn(async move { callback(bytes).await }));
+                        futures.push(callback(bytes));
                     }
                     Some(limit) => {
                         if limit != 0 {
-                            callback_handlers.push(spawn(async move { callback(bytes).await }));
+                            futures.push(callback(bytes));
 
                             listener.limit = Some(limit - 1);
                         } else {
@@ -192,10 +191,7 @@ impl AsyncEventEmitter {
             }
         }
 
-        for handles in callback_handlers {
-            _ = handles.await;
-        }
-
+        while futures.next().await.is_some() {}
         Ok(())
     }
 
@@ -235,16 +231,16 @@ impl AsyncEventEmitter {
     ///
     /// ```
     /// use async_event_emitter::AsyncEventEmitter;
+    /// #[tokio::main]
+    /// async fn main() {
     /// let event_emitter = AsyncEventEmitter::new();
     /// // Listener will be executed 3 times. After the third time, the listener will be deleted.
     /// event_emitter.on_limited("Some event", Some(3), |value: ()| async{ println!("Hello world!")});
-    /// tokio_test::block_on( async {
     /// event_emitter.emit("Some event", ()).await; // 1 >> "Hello world!"
     /// event_emitter.emit("Some event", ()).await; // 2 >> "Hello world!"
     /// event_emitter.emit("Some event", ()).await; // 3 >> "Hello world!"
     /// event_emitter.emit("Some event", ()).await; // 4 >> <Nothing happens here because listener was deleted after the 3rd call>
-    ///
-    /// });
+    /// }
     /// ```
     pub fn on_limited<F, T, C>(&self, event: &str, limit: Option<u64>, callback: C) -> String
     where
@@ -287,7 +283,7 @@ impl AsyncEventEmitter {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust
     /// use async_event_emitter::AsyncEventEmitter;
     /// let  event_emitter = AsyncEventEmitter::new();
     ///
@@ -312,7 +308,7 @@ impl AsyncEventEmitter {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust
     /// use async_event_emitter::AsyncEventEmitter;
     /// let  event_emitter = AsyncEventEmitter::new();
     ///
