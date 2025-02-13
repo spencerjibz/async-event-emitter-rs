@@ -1,0 +1,85 @@
+name: Coverage
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Install Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - name: Download and install grcov
+        run: |
+          GRCOV_VERSION="0.8.20"
+          curl -L -o grcov.tar.bz2 "https://github.com/mozilla/grcov/releases/download/v$GRCOV_VERSION/grcov-x86_64-unknown-linux-gnu.tar.bz2"
+          tar xjf grcov.tar.bz2
+          chmod +x grcov
+          mv grcov /usr/local/bin/
+
+      - name: Ensure target directory exists
+        run: mkdir -p target/coverage
+
+      - name: Run tests with coverage
+        run: |
+          export CARGO_INCREMENTAL=0
+          export RUSTFLAGS="-Cinstrument-coverage"
+          export LLVM_PROFILE_FILE="$(pwd)/target/debug/deps/%p-%m.profraw"
+          cargo +nightly test
+
+      - name: Locate LLVM Tools
+        run: |
+          echo "LLVM_TOOLS_DIR=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | grep host | awk '{print $2}')/bin" >> $GITHUB_ENV
+
+      - name: Download and install rustfilt
+        run: |
+          curl -L -o rustfilt "https://github.com/luser/rustfilt/releases/latest/download/rustfilt-x86_64-unknown-linux-gnu"
+          chmod +x rustfilt
+          mv rustfilt /usr/local/bin/
+
+      - name: Merge and Convert Coverage Data
+        run: |
+          $LLVM_TOOLS_DIR/llvm-profdata merge -sparse $(find target/debug/deps -name '*.profraw') -o target/coverage/merged.profdata
+          $LLVM_TOOLS_DIR/llvm-cov export --format=lcov --instr-profile=target/coverage/merged.profdata \
+            --ignore-filename-regex='/.cargo/registry|rustc/' \
+            --Xdemangler=rustfilt $(find target/debug/deps -executable -type f) > target/coverage/lcov.info
+
+      - name: Verify Coverage File
+        run: |
+          ls -lah target/coverage/
+          head -n 20 target/coverage/lcov.info
+
+      - name: Upload coverage report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: target/coverage/lcov.info
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: target/coverage/lcov.info
+          fail_ci_if_error: true
+          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
