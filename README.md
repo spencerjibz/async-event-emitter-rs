@@ -12,11 +12,10 @@ Allows you to subscribe to events with callbacks and also fire those events.
 Events are in the form of (strings, value) and callbacks are in the form of closures that take in a value parameter;
 
 #### Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
-
--    Emitted values should implement an extra trait (Debug) in addition to Serde's Serialize and Deserialize.
 -    This is an async implementation, not limited to tokio, but async-std is supported  under the ``` use-async-std ``` feature flag.
 -    The listener methods **_(on and once)_** take a callback that returns a future instead of a merely a closure.
 -    The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
+-    Thread Safe and can be used lock-free (supports interior mutability).
 
 #### Getting Started
 
@@ -24,7 +23,7 @@ Events are in the form of (strings, value) and callbacks are in the form of clos
     use async_event_emitter::AsyncEventEmitter;
     #[tokio::main]
     async fn main() {
-        let mut event_emitter = AsyncEventEmitter::new();
+        let event_emitter = AsyncEventEmitter::new();
         // This will print <"Hello world!"> whenever the <"Say Hello"> event is emitted
         event_emitter.on("Say Hello", |_: ()| async move { println!("Hello world!") });
         event_emitter.emit("Say Hello", ()).await.unwrap();
@@ -43,7 +42,7 @@ A single EventEmitter instance can have listeners to values of multiple types.
 
     #[tokio::main]
     async fn main() -> anyhow::Result<()> {
-        let mut event_emitter = EventEmitter::new();
+        let event_emitter = EventEmitter::new();
         event_emitter.on("Add three", |number: f64| async move {
             println!("{}", number + 3.0)
         });
@@ -94,7 +93,7 @@ Removing listeners is also easy
 
 ```rust
     use async_event_emitter::AsyncEventEmitter as EventEmitter;
-    let mut event_emitter = EventEmitter::new();
+    let event_emitter = EventEmitter::new();
 
     let listener_id = event_emitter.on("Hello", |_: ()| async { println!("Hello World") });
     match event_emitter.remove_listener(&listener_id) {
@@ -112,23 +111,19 @@ After all, one of the main points of using an EventEmitter is to avoid passing d
 ```rust
         // global_event_emitter.rs
         use async_event_emitter::AsyncEventEmitter;
-        use futures::lock::Mutex;
         use lazy_static::lazy_static;
 
         // Use lazy_static! because the size of EventEmitter is not known at compile time
         lazy_static! {
         // Export the emitter with `pub` keyword
-        pub static ref EVENT_EMITTER: Mutex<AsyncEventEmitter> = Mutex::new(AsyncEventEmitter::new());
+        pub static ref EVENT_EMITTER: AsyncEventEmitter = AsyncEventEmitter::new();
         }
 
         #[tokio::main]
         async fn main() -> anyhow::Result<()> {
             // We need to maintain a lock through the mutex so we can avoid data races
-            EVENT_EMITTER
-                .lock()
-                .await
-                .on("Hello", |_: ()| async { println!("hello there!") });
-            EVENT_EMITTER.lock().await.emit("Hello", ()).await?;
+            EVENT_EMITTER.on("Hello", |_: ()| async { println!("hello there!") });
+            EVENT_EMITTER.emit("Hello", ()).await?;
 
             Ok(())
         }
@@ -136,8 +131,6 @@ After all, one of the main points of using an EventEmitter is to avoid passing d
         async fn random_function() {
             // When the <"Hello"> event is emitted in main.rs then print <"Random stuff!">
             EVENT_EMITTER
-                .lock()
-                .await
                 .on("Hello", |_: ()| async { println!("Random stuff!") });
         }
 

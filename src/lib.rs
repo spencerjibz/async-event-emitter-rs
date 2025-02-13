@@ -7,10 +7,10 @@
         Events are in the form of (strings, value) and callbacks are in the form of closures that take in a value parameter;
 
         ## Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
-        - Emitted values should implement an extra trait (Debug) in addition to Serde's Serialize and Deserialize.
         - This is an async implementation, not limited to tokio, but also supports async-std  under the ```use-async-std``` feature flag.
         - The listener methods ***(on and once)*** take a callback that returns a future instead of a merely a closure.
         - The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
+        - Thread Safe and can be used lock-free (supports interior mutability).
 
 
         ## Getting Started
@@ -28,7 +28,7 @@
         }
         ```
         ## Basic Usage
-        We can emit and listen to values of any type so long as they implement  the Debug trait and serde's Serialize and Deserialize traits.
+        We can emit and listen to values of any type so long as they implement serde's Serialize and Deserialize traits.
         A single EventEmitter instance can have listeners to values of multiple types.
 
         ```
@@ -154,7 +154,7 @@ impl AsyncEventEmitter {
     /// ```
     pub async fn emit<'a, T>(&self, event: &str, value: T) -> anyhow::Result<()>
     where
-        T: Serialize + Deserialize<'a> + Send + Sync + 'a + std::fmt::Debug,
+        T: Serialize + Deserialize<'a> + Send + Sync + 'a,
     {
         #[cfg(feature = "use-async-std")]
         use async_std::task::spawn;
@@ -248,7 +248,7 @@ impl AsyncEventEmitter {
     /// ```
     pub fn on_limited<F, T, C>(&self, event: &str, limit: Option<u64>, callback: C) -> String
     where
-        for<'de> T: Deserialize<'de> + std::fmt::Debug,
+        for<'de> T: Deserialize<'de>,
         C: Fn(T) -> F + Send + Sync + 'static,
         F: Future<Output = ()> + Send + Sync + 'static,
     {
@@ -300,7 +300,7 @@ impl AsyncEventEmitter {
     /// ```
     pub fn once<F, T, C>(&self, event: &str, callback: C) -> String
     where
-        for<'de> T: Deserialize<'de> + std::fmt::Debug,
+        for<'de> T: Deserialize<'de>,
         C: Fn(T) -> F + Send + Sync + 'static,
         F: Future<Output = ()> + Send + Sync + 'static,
     {
@@ -323,7 +323,7 @@ impl AsyncEventEmitter {
     /// ```
     pub fn on<F, T, C>(&self, event: &str, callback: C) -> String
     where
-        for<'de> T: Deserialize<'de> + std::fmt::Debug,
+        for<'de> T: Deserialize<'de>,
         C: Fn(T) -> F + Send + Sync + 'static,
         F: Future<Output = ()> + Send + Sync + 'static,
     {
