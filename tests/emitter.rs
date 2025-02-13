@@ -1,24 +1,15 @@
-mod tester {
-    /// use
-    #[cfg(feature = "use-async-std")]
-    pub use async_std::test;
-    #[cfg(not(feature = "use-async-std"))]
-    pub use tokio::test;
-}
-
 #[cfg(test)]
-
 mod async_event_emitter {
     use anyhow::Ok;
     use async_event_emitter::AsyncEventEmitter;
-    use futures::{lock::Mutex, FutureExt};
+    use futures::FutureExt;
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
     use std::sync::Arc;
 
     lazy_static! {
         // Export the emitter with `pub` keyword
-        pub static ref EVENT_EMITTER: Mutex<AsyncEventEmitter> = Mutex::new(AsyncEventEmitter::new());
+        pub static ref EVENT_EMITTER: AsyncEventEmitter = AsyncEventEmitter::new();
     }
 
     #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -34,9 +25,9 @@ mod async_event_emitter {
     #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
     struct DateTime(Date, Time);
 
-    #[tester::test]
+    #[tokio::test]
     async fn test_async_event() -> anyhow::Result<()> {
-        let mut event_emitter = AsyncEventEmitter::new();
+        let event_emitter = AsyncEventEmitter::new();
 
         let date = Date {
             month: "January".to_string(),
@@ -57,9 +48,9 @@ mod async_event_emitter {
         Ok(())
     }
 
-    #[tester::test]
+    #[tokio::test]
     async fn test_emit_multiple_args() -> anyhow::Result<()> {
-        let mut event_emitter = AsyncEventEmitter::new();
+        let event_emitter = AsyncEventEmitter::new();
         let time = Time {
             hour: "22".to_owned(),
             minute: "30".to_owned(),
@@ -85,9 +76,9 @@ mod async_event_emitter {
         Ok(())
     }
 
-    #[tester::test]
+    #[tokio::test]
     async fn listens_once_with_multiple_emits() -> anyhow::Result<()> {
-        let mut event_emitter = AsyncEventEmitter::new();
+        let event_emitter = AsyncEventEmitter::new();
         let name = "LOG_DATE".to_string();
         event_emitter.once("LOG_DATE", |tup: (Date, String)| async move {
             println!("{:#?}", tup)
@@ -125,9 +116,9 @@ mod async_event_emitter {
 
         Ok(())
     }
-    #[tester::test]
+    #[tokio::test]
     async fn remove_listeners() -> anyhow::Result<()> {
-        let mut event_emitter = AsyncEventEmitter::new();
+        let event_emitter = AsyncEventEmitter::new();
         let dt = DateTime(
             Date {
                 month: "11".to_owned(),
@@ -170,10 +161,10 @@ mod async_event_emitter {
         Ok(())
     }
 
-    #[tester::test]
+    #[tokio::test]
     #[should_panic]
     async fn panics_on_different_values_for_same_event() {
-        let mut event_emitter = AsyncEventEmitter::new();
+        let event_emitter = AsyncEventEmitter::new();
 
         event_emitter.on("value", |_v: Vec<u8>| async move {});
 
@@ -183,20 +174,15 @@ mod async_event_emitter {
             .unwrap();
         event_emitter.emit("value", 12).await.unwrap();
     }
-    #[tester::test]
+    #[tokio::test]
 
     async fn global_event_emitter() {
-        // We need to maintain a lock through the mutex so we can avoid data races
-        EVENT_EMITTER
-            .lock()
-            .await
-            .on("Hello", |v: String| async move { assert_eq!(&v, "world") });
-        let _ = EVENT_EMITTER.lock().await.emit("Hello", "world").await;
+        EVENT_EMITTER.on("Hello", |v: String| async move { assert_eq!(&v, "world") });
+        let _ = EVENT_EMITTER.emit("Hello", "world").await;
     }
 
     // tests/listener_tests.rs
 
-    use crate::tester;
     use async_event_emitter::AsyncListener;
 
     #[test]
