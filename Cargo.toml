@@ -31,7 +31,7 @@ version = "1.13.1"
 features = ["v4"]
 default-features = false
 [dev-dependencies]
-tokio = { version = "*", features = [
+tokio = { version = "1.43.0", features = [
     "rt",
     "macros",
     "rt-multi-thread",
