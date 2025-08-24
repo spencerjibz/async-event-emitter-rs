@@ -130,12 +130,63 @@ pub struct AsyncListener {
 
 #[derive(Default, Clone)]
 pub struct AsyncEventEmitter {
-    pub listeners: DashMap<String, Vec<AsyncListener>>,
+    listeners: DashMap<String, Vec<AsyncListener>>,
 }
 
 impl AsyncEventEmitter {
     pub fn new() -> Self {
         Self::default()
+    }
+    /// Returns the numbers of events
+    /// # Example
+    ///
+    /// ```rust
+    /// use async_event_emitter::AsyncEventEmitter;
+    /// let event_emitter = AsyncEventEmitter::new();
+    /// event_emitter.event_count(); // returns  0
+    /// ```
+    pub fn event_count(&self) -> usize {
+        self.listeners.len()
+    }
+
+    /// Returns all listeners on the specified event
+    /// # Example
+    /// ```rust
+    /// use async_event_emitter::AsyncEventEmitter;
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let emitter = AsyncEventEmitter::new();
+    ///     emitter.on("test", |value: ()| async { println!("Hello world!") });
+    ///     emitter.emit("test", ()).await;
+    ///     let listeners = emitter.listeners_by_event("test");
+    ///     println!("{listeners:?}");
+    /// }
+    /// ```
+    pub fn listeners_by_event(&self, event: &str) -> Vec<AsyncListener> {
+        if let Some(listeners) = self.listeners.get(event) {
+            let values = listeners.to_vec();
+            return values;
+        }
+        vec![]
+    }
+    /// Returns the numbers of listners per event
+    /// # Example
+    ///
+    /// ```rust
+    /// use async_event_emitter::AsyncEventEmitter;
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let emitter = AsyncEventEmitter::new();
+    ///     emitter.on("test", |value: ()| async { println!("Hello world!") });
+    ///     emitter.emit("test", ()).await;
+    ///     emitter.listener_count_by_event("test"); // returns  1
+    /// }
+    /// ```
+    pub fn listener_count_by_event(&self, event: &str) -> usize {
+        if let Some(listeners) = self.listeners.get(event) {
+            return listeners.len();
+        }
+        0
     }
 
     /// Emits an event of the given parameters and executes each callback that is listening to that event asynchronously by spawning a task for each callback.
@@ -203,8 +254,6 @@ impl AsyncEventEmitter {
     /// let event_emitter = AsyncEventEmitter::new();
     /// let listener_id =
     ///     event_emitter.on("Some event", |value: ()| async { println!("Hello world!") });
-    /// println!("{:?}", event_emitter.listeners);
-    ///
     /// // Removes the listener that we just added
     /// event_emitter.remove_listener(listener_id);
     /// ```

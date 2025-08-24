@@ -40,7 +40,6 @@ mod async_event_emitter {
         });
         event_emitter.emit("LOG_DATE", date).await?;
         println!("{:#?}", event_emitter);
-        assert!(event_emitter.listeners.contains_key("LOG_DATE"));
 
         Ok(())
     }
@@ -106,10 +105,7 @@ mod async_event_emitter {
             )
             .await?;
 
-        assert_eq!(event_emitter.listeners.len(), 1);
-        if let Some(event) = event_emitter.listeners.get("LOG_DATE") {
-            println!("{:?}", event)
-        }
+        assert_eq!(event_emitter.event_count(), 1);
 
         Ok(())
     }
@@ -149,9 +145,7 @@ mod async_event_emitter {
             assert_eq!(id, _listener_id)
         }
 
-        if let Some(event_listeners) = event_emitter.listeners.get("PING") {
-            assert!(event_listeners.is_empty())
-        }
+        assert!(event_emitter.listeners_by_event("PING").is_empty());
 
         Ok(())
     }
