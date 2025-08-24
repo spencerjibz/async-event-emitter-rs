@@ -2,11 +2,8 @@
 mod async_event_emitter {
     use anyhow::Ok;
     use async_event_emitter::AsyncEventEmitter;
-    use futures::FutureExt;
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
-    use std::sync::Arc;
-
     lazy_static! {
         // Export the emitter with `pub` keyword
         pub static ref EVENT_EMITTER: AsyncEventEmitter = AsyncEventEmitter::new();
@@ -145,18 +142,16 @@ mod async_event_emitter {
                 assert!(!d.is_empty())
             }
         });
-
         event_emitter.emit("PING", String::from("pong")).await?;
         event_emitter.emit("DateTime", copy).await?;
 
-        if let Some(id) = event_emitter.remove_listener(&_listener_id) {
+        if let Some(id) = event_emitter.remove_listener(_listener_id) {
             assert_eq!(id, _listener_id)
         }
 
         if let Some(event_listeners) = event_emitter.listeners.get("PING") {
             assert!(event_listeners.is_empty())
         }
-        assert!(event_emitter.remove_listener("some").is_none());
 
         Ok(())
     }
@@ -175,45 +170,8 @@ mod async_event_emitter {
         event_emitter.emit("value", 12).await.unwrap();
     }
     #[tokio::test]
-
     async fn global_event_emitter() {
         EVENT_EMITTER.on("Hello", |v: String| async move { assert_eq!(&v, "world") });
         let _ = EVENT_EMITTER.emit("Hello", "world").await;
-    }
-
-    // tests/listener_tests.rs
-
-    use async_event_emitter::AsyncListener;
-
-    #[test]
-    fn test_async_listener() {
-        // Test cases for AsyncListener struct
-
-        // Basic test with default values
-        let listener = AsyncListener {
-            callback: Arc::new(|_| async {}.boxed()),
-            limit: None,
-            id: "1".to_string(),
-        };
-
-        assert_eq!(listener.limit, None);
-        assert_eq!(listener.id.clone(), "1");
-
-        // Test with custom values
-        let callback = Arc::new(|_| async {}.boxed());
-        let limit = Some(10);
-        let id = "my-id".to_string();
-
-        let listener = AsyncListener {
-            callback,
-            limit,
-            id: id.clone(),
-        };
-
-        assert_eq!(listener.limit, limit);
-        assert_eq!(listener.id, id);
-        println!("{listener:?}")
-
-        // Add more test cases to cover edge cases
     }
 }

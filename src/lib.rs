@@ -70,7 +70,7 @@
         let event_emitter = EventEmitter::new();
 
         let listener_id = event_emitter.on("Hello", |_: ()|  async {println!("Hello World")});
-        match event_emitter.remove_listener(&listener_id) {
+        match event_emitter.remove_listener(listener_id) {
             Some(listener_id) => print!("Removed event listener!"),
             None => print!("No event listener of that id exists")
         }
@@ -126,7 +126,7 @@ use std::sync::Arc;
 pub struct AsyncListener {
     pub callback: Arc<AsyncCB>,
     pub limit: Option<u64>,
-    pub id: String,
+    pub id: Uuid,
 }
 
 #[derive(Default, Clone)]
@@ -207,9 +207,9 @@ impl AsyncEventEmitter {
     /// println!("{:?}", event_emitter.listeners);
     ///
     /// // Removes the listener that we just added
-    /// event_emitter.remove_listener(&listener_id);
+    /// event_emitter.remove_listener(listener_id);
     /// ```
-    pub fn remove_listener(&self, id_to_delete: &str) -> Option<String> {
+    pub fn remove_listener(&self, id_to_delete: Uuid) -> Option<Uuid> {
         for mut mut_ref in self.listeners.iter_mut() {
             let event_listeners = mut_ref.value_mut();
             if let Some(index) = event_listeners
@@ -217,7 +217,7 @@ impl AsyncEventEmitter {
                 .position(|listener| listener.id == id_to_delete)
             {
                 event_listeners.remove(index);
-                return Some(id_to_delete.to_string());
+                return Some(id_to_delete);
             }
         }
 
@@ -242,13 +242,13 @@ impl AsyncEventEmitter {
     /// event_emitter.emit("Some event", ()).await; // 4 >> <Nothing happens here because listener was deleted after the 3rd call>
     /// }
     /// ```
-    pub fn on_limited<F, T, C>(&self, event: &str, limit: Option<u64>, callback: C) -> String
+    pub fn on_limited<F, T, C>(&self, event: &str, limit: Option<u64>, callback: C) -> Uuid
     where
         for<'de> T: Deserialize<'de>,
         C: Fn(T) -> F + Send + Sync + 'static,
         F: Future<Output = ()> + Send + Sync + 'static,
     {
-        let id = Uuid::new_v4().to_string();
+        let id = Uuid::new_v4();
         let parsed_callback = move |bytes: Vec<u8>| {
             let value: T = bincode::deserialize(&bytes).unwrap_or_else(|_| {
                 panic!(
@@ -261,7 +261,7 @@ impl AsyncEventEmitter {
         };
 
         let listener = AsyncListener {
-            id: id.clone(),
+            id,
             limit,
             callback: Arc::new(parsed_callback),
         };
@@ -294,7 +294,7 @@ impl AsyncEventEmitter {
     /// event_emitter.emit("Some event", ());
     /// // >> <Nothing happens here since listener was deleted>
     /// ```
-    pub fn once<F, T, C>(&self, event: &str, callback: C) -> String
+    pub fn once<F, T, C>(&self, event: &str, callback: C) -> Uuid
     where
         for<'de> T: Deserialize<'de>,
         C: Fn(T) -> F + Send + Sync + 'static,
@@ -317,7 +317,7 @@ impl AsyncEventEmitter {
     /// // MUST also match the type that is being emitted (here we just use a throwaway `()` type since we don't care about using the `value`)
     /// event_emitter.on("Some event", |value: ()| async { println!("Hello world!")});
     /// ```
-    pub fn on<F, T, C>(&self, event: &str, callback: C) -> String
+    pub fn on<F, T, C>(&self, event: &str, callback: C) -> Uuid
     where
         for<'de> T: Deserialize<'de>,
         C: Fn(T) -> F + Send + Sync + 'static,
