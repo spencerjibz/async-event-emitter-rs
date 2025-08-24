@@ -8,9 +8,8 @@
         ## Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
         - This is an async implementation that works for all common async runtimes (Tokio, async-std and smol)
         - The listener methods ***(on and once)*** take a callback that returns a future instead of a merely a closure.
-        - The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
+        - The emit methods executes each callback on each event by running async intra-task instead of spawning a std::thread
         - This emitter is thread safe and can  also be used lock-free (supports interior mutability).
-
 
         ***Note***: To use strict return and event types, use [typed-emitter](https://crates.io/crates/typed-emitter), that crate solves [this issue](https://github.com/spencerjibz/async-event-emitter-rs/issues/31) too.
 
@@ -156,9 +155,9 @@ impl AsyncEventEmitter {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn emit<'a, T>(&self, event: &str, value: T) -> anyhow::Result<()>
+    pub async fn emit<T>(&self, event: &str, value: T) -> anyhow::Result<()>
     where
-        T: Serialize + Deserialize<'a> + Send + Sync + 'a,
+        T: Serialize,
     {
         let mut futures: FuturesUnordered<_> = FuturesUnordered::new();
 
