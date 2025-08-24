@@ -120,7 +120,7 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 pub type AsyncCB = dyn Fn(Vec<u8>) -> BoxFuture<'static, ()> + Send + Sync + 'static;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub struct AsyncListener {
     pub callback: Arc<AsyncCB>,
@@ -131,6 +131,7 @@ pub struct AsyncListener {
 #[derive(Default, Clone)]
 pub struct AsyncEventEmitter {
     listeners: DashMap<String, Vec<AsyncListener>>,
+    all_listener: Arc<Mutex<Option<AsyncListener>>>,
 }
 
 impl AsyncEventEmitter {
@@ -241,6 +242,12 @@ impl AsyncEventEmitter {
             }
         }
 
+        if let Some(global_listener) = self.all_listener.lock().unwrap().as_ref() {
+            let callback = global_listener.callback.clone();
+            let bytes: Vec<u8> = bincode::serialize(&value)?;
+            futures.push(callback(bytes));
+        }
+
         while futures.next().await.is_some() {}
         Ok(())
     }
@@ -268,7 +275,12 @@ impl AsyncEventEmitter {
                 return Some(id_to_delete);
             }
         }
-
+        let mut all_listener = self.all_listener.lock().unwrap();
+        if let Some(listener) = all_listener.as_ref() {
+            if id_to_delete == listener.id {
+                all_listener.take();
+            }
+        }
         None
     }
 
@@ -372,6 +384,55 @@ impl AsyncEventEmitter {
         F: Future<Output = ()> + Send + Sync + 'static,
     {
         self.on_limited(event, None, callback)
+    }
+    /// Adds an event listener called for whenever every event is called
+    /// Returns the id of the newly added listener.
+    ///
+    /// # Example
+    /// ```rust
+    /// use async_event_emitter::AsyncEventEmitter;
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let mut event_emitter = AsyncEventEmitter::new();
+    ///     // this will print Hello world two because of
+    ///     event_emitter.on_all(|value: ()| async { println!("Hello world!") });
+    ///     event_emitter.emit("Some event", ()).await;
+    ///     // >> "Hello world!"
+    ///
+    ///     event_emitter.emit("next event", ()).await;
+    ///     // >> <Nothing happens here since listener was deleted>
+    /// }
+    /// ```
+    pub fn on_all<F, T, C>(&self, callback: C) -> Uuid
+    where
+        for<'de> T: Deserialize<'de>,
+        C: Fn(T) -> F + Send + Sync + 'static,
+        F: Future<Output = ()> + Send + Sync + 'static,
+    {
+        assert!(
+            self.all_listener.lock().unwrap().is_none(),
+            "only one global listener is allowed"
+        );
+        let id = Uuid::new_v4();
+        let parsed_callback = move |bytes: Vec<u8>| {
+            let value: T = bincode::deserialize(&bytes).unwrap_or_else(|_| {
+                panic!(
+                    " value can't be deserialized into type {}",
+                    std::any::type_name::<T>()
+                )
+            });
+            callback(value).boxed()
+        };
+
+        let listener = AsyncListener {
+            id,
+            limit: None,
+            callback: Arc::new(parsed_callback),
+        };
+
+        self.all_listener.lock().unwrap().replace(listener);
+
+        id
     }
 }
 
