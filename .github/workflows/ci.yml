@@ -20,7 +20,7 @@ jobs:
                  with:
                       toolchain: stable
 
-               - run: cargo fmt --all -- --check
+               - run: cargo +stable fmt --all -- --check
      test:
           name: lib tests and docs test
           runs-on: ubuntu-latest

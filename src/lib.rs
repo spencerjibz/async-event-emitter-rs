@@ -8,9 +8,8 @@
         ## Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
         - This is an async implementation that works for all common async runtimes (Tokio, async-std and smol)
         - The listener methods ***(on and once)*** take a callback that returns a future instead of a merely a closure.
-        - The emit methods executes each callback on each event by spawning a tokio task instead of a std::thread
+        - The emit methods executes each callback on each event by running async intra-task instead of spawning a std::thread
         - This emitter is thread safe and can  also be used lock-free (supports interior mutability).
-
 
         ***Note***: To use strict return and event types, use [typed-emitter](https://crates.io/crates/typed-emitter), that crate solves [this issue](https://github.com/spencerjibz/async-event-emitter-rs/issues/31) too.
 
@@ -70,10 +69,27 @@
         let event_emitter = EventEmitter::new();
 
         let listener_id = event_emitter.on("Hello", |_: ()|  async {println!("Hello World")});
-        match event_emitter.remove_listener(&listener_id) {
+        match event_emitter.remove_listener(listener_id) {
             Some(listener_id) => print!("Removed event listener!"),
             None => print!("No event listener of that id exists")
         }
+        ```
+
+        Listening to all emitted events with a single listener
+
+        ```rust
+        use async_event_emitter::AsyncEventEmitter as EventEmitter;
+         #[tokio::main]
+          async fn main() {
+         let mut event_emitter = EventEmitter::new();
+         // this will print Hello world two because of
+         event_emitter.on_all(|value: i32| async move { println!("Hello world! - {value}") });
+         // >> "Hello world! - 1"
+         // >> "Hello world! - 2"
+         event_emitter.emit("Some event", 1).await;
+         event_emitter.emit("next event", 2).await;
+      }
+
         ```
         ## Creating a Global EventEmitter
 
@@ -121,22 +137,74 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 pub type AsyncCB = dyn Fn(Vec<u8>) -> BoxFuture<'static, ()> + Send + Sync + 'static;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub struct AsyncListener {
     pub callback: Arc<AsyncCB>,
     pub limit: Option<u64>,
-    pub id: String,
+    pub id: Uuid,
 }
 
 #[derive(Default, Clone)]
 pub struct AsyncEventEmitter {
-    pub listeners: DashMap<String, Vec<AsyncListener>>,
+    listeners: DashMap<String, Vec<AsyncListener>>,
+    all_listener: Arc<Mutex<Option<AsyncListener>>>,
 }
 
 impl AsyncEventEmitter {
     pub fn new() -> Self {
         Self::default()
+    }
+    /// Returns the numbers of events
+    /// # Example
+    ///
+    /// ```rust
+    /// use async_event_emitter::AsyncEventEmitter;
+    /// let event_emitter = AsyncEventEmitter::new();
+    /// event_emitter.event_count(); // returns  0
+    /// ```
+    pub fn event_count(&self) -> usize {
+        self.listeners.len()
+    }
+
+    /// Returns all listeners on the specified event
+    /// # Example
+    /// ```rust
+    /// use async_event_emitter::AsyncEventEmitter;
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let emitter = AsyncEventEmitter::new();
+    ///     emitter.on("test", |value: ()| async { println!("Hello world!") });
+    ///     emitter.emit("test", ()).await;
+    ///     let listeners = emitter.listeners_by_event("test");
+    ///     println!("{listeners:?}");
+    /// }
+    /// ```
+    pub fn listeners_by_event(&self, event: &str) -> Vec<AsyncListener> {
+        if let Some(listeners) = self.listeners.get(event) {
+            let values = listeners.to_vec();
+            return values;
+        }
+        vec![]
+    }
+    /// Returns the numbers of listners per event
+    /// # Example
+    ///
+    /// ```rust
+    /// use async_event_emitter::AsyncEventEmitter;
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let emitter = AsyncEventEmitter::new();
+    ///     emitter.on("test", |value: ()| async { println!("Hello world!") });
+    ///     emitter.emit("test", ()).await;
+    ///     emitter.listener_count_by_event("test"); // returns  1
+    /// }
+    /// ```
+    pub fn listener_count_by_event(&self, event: &str) -> usize {
+        if let Some(listeners) = self.listeners.get(event) {
+            return listeners.len();
+        }
+        0
     }
 
     /// Emits an event of the given parameters and executes each callback that is listening to that event asynchronously by spawning a task for each callback.
@@ -156,9 +224,9 @@ impl AsyncEventEmitter {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn emit<'a, T>(&self, event: &str, value: T) -> anyhow::Result<()>
+    pub async fn emit<T>(&self, event: &str, value: T) -> anyhow::Result<()>
     where
-        T: Serialize + Deserialize<'a> + Send + Sync + 'a,
+        T: Serialize,
     {
         let mut futures: FuturesUnordered<_> = FuturesUnordered::new();
 
@@ -191,6 +259,12 @@ impl AsyncEventEmitter {
             }
         }
 
+        if let Some(global_listener) = self.all_listener.lock().unwrap().as_ref() {
+            let callback = global_listener.callback.clone();
+            let bytes: Vec<u8> = bincode::serialize(&value)?;
+            futures.push(callback(bytes));
+        }
+
         while futures.next().await.is_some() {}
         Ok(())
     }
@@ -204,12 +278,10 @@ impl AsyncEventEmitter {
     /// let event_emitter = AsyncEventEmitter::new();
     /// let listener_id =
     ///     event_emitter.on("Some event", |value: ()| async { println!("Hello world!") });
-    /// println!("{:?}", event_emitter.listeners);
-    ///
     /// // Removes the listener that we just added
-    /// event_emitter.remove_listener(&listener_id);
+    /// event_emitter.remove_listener(listener_id);
     /// ```
-    pub fn remove_listener(&self, id_to_delete: &str) -> Option<String> {
+    pub fn remove_listener(&self, id_to_delete: Uuid) -> Option<Uuid> {
         for mut mut_ref in self.listeners.iter_mut() {
             let event_listeners = mut_ref.value_mut();
             if let Some(index) = event_listeners
@@ -217,10 +289,15 @@ impl AsyncEventEmitter {
                 .position(|listener| listener.id == id_to_delete)
             {
                 event_listeners.remove(index);
-                return Some(id_to_delete.to_string());
+                return Some(id_to_delete);
             }
         }
-
+        let mut all_listener = self.all_listener.lock().unwrap();
+        if let Some(listener) = all_listener.as_ref() {
+            if id_to_delete == listener.id {
+                all_listener.take();
+            }
+        }
         None
     }
 
@@ -242,13 +319,13 @@ impl AsyncEventEmitter {
     /// event_emitter.emit("Some event", ()).await; // 4 >> <Nothing happens here because listener was deleted after the 3rd call>
     /// }
     /// ```
-    pub fn on_limited<F, T, C>(&self, event: &str, limit: Option<u64>, callback: C) -> String
+    pub fn on_limited<F, T, C>(&self, event: &str, limit: Option<u64>, callback: C) -> Uuid
     where
         for<'de> T: Deserialize<'de>,
         C: Fn(T) -> F + Send + Sync + 'static,
         F: Future<Output = ()> + Send + Sync + 'static,
     {
-        let id = Uuid::new_v4().to_string();
+        let id = Uuid::new_v4();
         let parsed_callback = move |bytes: Vec<u8>| {
             let value: T = bincode::deserialize(&bytes).unwrap_or_else(|_| {
                 panic!(
@@ -261,7 +338,7 @@ impl AsyncEventEmitter {
         };
 
         let listener = AsyncListener {
-            id: id.clone(),
+            id,
             limit,
             callback: Arc::new(parsed_callback),
         };
@@ -294,7 +371,7 @@ impl AsyncEventEmitter {
     /// event_emitter.emit("Some event", ());
     /// // >> <Nothing happens here since listener was deleted>
     /// ```
-    pub fn once<F, T, C>(&self, event: &str, callback: C) -> String
+    pub fn once<F, T, C>(&self, event: &str, callback: C) -> Uuid
     where
         for<'de> T: Deserialize<'de>,
         C: Fn(T) -> F + Send + Sync + 'static,
@@ -317,13 +394,62 @@ impl AsyncEventEmitter {
     /// // MUST also match the type that is being emitted (here we just use a throwaway `()` type since we don't care about using the `value`)
     /// event_emitter.on("Some event", |value: ()| async { println!("Hello world!")});
     /// ```
-    pub fn on<F, T, C>(&self, event: &str, callback: C) -> String
+    pub fn on<F, T, C>(&self, event: &str, callback: C) -> Uuid
     where
         for<'de> T: Deserialize<'de>,
         C: Fn(T) -> F + Send + Sync + 'static,
         F: Future<Output = ()> + Send + Sync + 'static,
     {
         self.on_limited(event, None, callback)
+    }
+    /// Adds an event listener called for whenever every event is called
+    /// Returns the id of the newly added listener.
+    ///
+    /// # Example
+    /// ```rust
+    /// use async_event_emitter::AsyncEventEmitter;
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let mut event_emitter = AsyncEventEmitter::new();
+    ///     // this will print Hello world two because of
+    ///     event_emitter.on_all(|value: ()| async { println!("Hello world!") });
+    ///     event_emitter.emit("Some event", ()).await;
+    ///     // >> "Hello world!"
+    ///
+    ///     event_emitter.emit("next event", ()).await;
+    ///     // >> <Nothing happens here since listener was deleted>
+    /// }
+    /// ```
+    pub fn on_all<F, T, C>(&self, callback: C) -> Uuid
+    where
+        for<'de> T: Deserialize<'de>,
+        C: Fn(T) -> F + Send + Sync + 'static,
+        F: Future<Output = ()> + Send + Sync + 'static,
+    {
+        assert!(
+            self.all_listener.lock().unwrap().is_none(),
+            "only one global listener is allowed"
+        );
+        let id = Uuid::new_v4();
+        let parsed_callback = move |bytes: Vec<u8>| {
+            let value: T = bincode::deserialize(&bytes).unwrap_or_else(|_| {
+                panic!(
+                    " value can't be deserialized into type {}",
+                    std::any::type_name::<T>()
+                )
+            });
+            callback(value).boxed()
+        };
+
+        let listener = AsyncListener {
+            id,
+            limit: None,
+            callback: Arc::new(parsed_callback),
+        };
+
+        self.all_listener.lock().unwrap().replace(listener);
+
+        id
     }
 }
 

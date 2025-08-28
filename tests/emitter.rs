@@ -2,11 +2,8 @@
 mod async_event_emitter {
     use anyhow::Ok;
     use async_event_emitter::AsyncEventEmitter;
-    use futures::FutureExt;
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
-    use std::sync::Arc;
-
     lazy_static! {
         // Export the emitter with `pub` keyword
         pub static ref EVENT_EMITTER: AsyncEventEmitter = AsyncEventEmitter::new();
@@ -24,7 +21,6 @@ mod async_event_emitter {
     }
     #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
     struct DateTime(Date, Time);
-
     #[tokio::test]
     async fn test_async_event() -> anyhow::Result<()> {
         let event_emitter = AsyncEventEmitter::new();
@@ -43,7 +39,6 @@ mod async_event_emitter {
         });
         event_emitter.emit("LOG_DATE", date).await?;
         println!("{:#?}", event_emitter);
-        assert!(event_emitter.listeners.contains_key("LOG_DATE"));
 
         Ok(())
     }
@@ -109,10 +104,7 @@ mod async_event_emitter {
             )
             .await?;
 
-        assert_eq!(event_emitter.listeners.len(), 1);
-        if let Some(event) = event_emitter.listeners.get("LOG_DATE") {
-            println!("{:?}", event)
-        }
+        assert_eq!(event_emitter.event_count(), 1);
 
         Ok(())
     }
@@ -145,18 +137,14 @@ mod async_event_emitter {
                 assert!(!d.is_empty())
             }
         });
-
         event_emitter.emit("PING", String::from("pong")).await?;
         event_emitter.emit("DateTime", copy).await?;
 
-        if let Some(id) = event_emitter.remove_listener(&_listener_id) {
+        if let Some(id) = event_emitter.remove_listener(_listener_id) {
             assert_eq!(id, _listener_id)
         }
 
-        if let Some(event_listeners) = event_emitter.listeners.get("PING") {
-            assert!(event_listeners.is_empty())
-        }
-        assert!(event_emitter.remove_listener("some").is_none());
+        assert!(event_emitter.listeners_by_event("PING").is_empty());
 
         Ok(())
     }
@@ -175,45 +163,30 @@ mod async_event_emitter {
         event_emitter.emit("value", 12).await.unwrap();
     }
     #[tokio::test]
-
     async fn global_event_emitter() {
         EVENT_EMITTER.on("Hello", |v: String| async move { assert_eq!(&v, "world") });
         let _ = EVENT_EMITTER.emit("Hello", "world").await;
     }
-
-    // tests/listener_tests.rs
-
-    use async_event_emitter::AsyncListener;
-
-    #[test]
-    fn test_async_listener() {
-        // Test cases for AsyncListener struct
-
-        // Basic test with default values
-        let listener = AsyncListener {
-            callback: Arc::new(|_| async {}.boxed()),
-            limit: None,
-            id: "1".to_string(),
+    #[tokio::test]
+    async fn global_listener_on_emitter_works() -> anyhow::Result<()> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let instance = AsyncEventEmitter::new();
+        let emit_count: Arc<AtomicUsize> = Arc::default();
+        let count_clone = emit_count.clone();
+        let callback = move |value: i32| {
+            let count_clone = count_clone.clone();
+            async move {
+                println!("{value}");
+                count_clone.fetch_add(value as usize, std::sync::atomic::Ordering::AcqRel);
+            }
         };
 
-        assert_eq!(listener.limit, None);
-        assert_eq!(listener.id.clone(), "1");
-
-        // Test with custom values
-        let callback = Arc::new(|_| async {}.boxed());
-        let limit = Some(10);
-        let id = "my-id".to_string();
-
-        let listener = AsyncListener {
-            callback,
-            limit,
-            id: id.clone(),
-        };
-
-        assert_eq!(listener.limit, limit);
-        assert_eq!(listener.id, id);
-        println!("{listener:?}")
-
-        // Add more test cases to cover edge cases
+        let _id = instance.on_all(callback);
+        instance.emit("first", 1).await?;
+        instance.emit("second", 2).await?;
+        instance.emit("third", 5).await?;
+        assert_eq!(emit_count.load(Ordering::Acquire), 8);
+        Ok(())
     }
 }
