@@ -74,6 +74,23 @@
             None => print!("No event listener of that id exists")
         }
         ```
+
+        Listening to all emitted events with a single listener
+
+        ```rust
+        use async_event_emitter::AsyncEventEmitter as EventEmitter;
+         #[tokio::main]
+          async fn main() {
+         let mut event_emitter = EventEmitter::new();
+         // this will print Hello world two because of
+         event_emitter.on_all(|value: i32| async move { println!("Hello world! - {value}") });
+         // >> "Hello world! - 1"
+         // >> "Hello world! - 2"
+         event_emitter.emit("Some event", 1).await;
+         event_emitter.emit("next event", 2).await;
+      }
+
+        ```
         ## Creating a Global EventEmitter
 
         It's likely that you'll want to have a single EventEmitter instance that can be shared across files;
