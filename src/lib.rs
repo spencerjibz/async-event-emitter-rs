@@ -1,15 +1,26 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(
+    missing_debug_implementations,
+    missing_docs,
+    clippy::pedantic,
+    clippy::nursery
+)]
 
 use arc_swap::{ArcSwap, ArcSwapOption};
 use futures::future::{join_all, BoxFuture, Future, FutureExt};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+/// Type-erased listener callback: takes the serialized event value and returns a future.
 pub type AsyncCB = dyn Fn(&[u8]) -> BoxFuture<'static, ()> + Send + Sync + 'static;
+/// A registered event listener.
 #[derive(Clone)]
 pub struct AsyncListener {
+    /// The callback run when the listener's event is emitted.
     pub callback: Arc<AsyncCB>,
+    /// Remaining number of calls, or `None` if the listener never expires.
     pub limit: Option<Arc<AtomicU64>>,
+    /// Unique id returned when the listener was registered.
     pub id: Uuid,
 }
 type Listeners = ArcSwap<Vec<AsyncListener>>;
@@ -18,6 +29,9 @@ struct EmitterInner {
     listeners: papaya::HashMap<String, Listeners>,
     all_listener: ArcSwapOption<AsyncListener>,
 }
+/// An async, lock-free event emitter.
+///
+/// Clones share the same listeners.
 #[derive(Default, Clone)]
 pub struct AsyncEventEmitter {
     inner: Arc<EmitterInner>,
@@ -52,6 +66,8 @@ where
 }
 
 impl AsyncEventEmitter {
+    /// Creates an emitter with no listeners.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -63,6 +79,7 @@ impl AsyncEventEmitter {
     /// let event_emitter = AsyncEventEmitter::new();
     /// event_emitter.event_count(); // returns  0
     /// ```
+    #[must_use]
     pub fn event_count(&self) -> usize {
         self.inner.listeners.len()
     }
@@ -80,6 +97,7 @@ impl AsyncEventEmitter {
     ///     println!("{listeners:?}");
     /// }
     /// ```
+    #[must_use]
     pub fn listeners_by_event(&self, event: &str) -> Vec<AsyncListener> {
         self.inner
             .listeners
@@ -101,6 +119,7 @@ impl AsyncEventEmitter {
     ///     emitter.listener_count_by_event("test"); // returns  1
     /// }
     /// ```
+    #[must_use]
     pub fn listener_count_by_event(&self, event: &str) -> usize {
         self.inner
             .listeners
@@ -110,6 +129,10 @@ impl AsyncEventEmitter {
     }
 
     /// Emits an event of the given parameters and executes each callback that is listening to that event asynchronously by spawning a task for each callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `value` can't be serialized.
     ///
     /// # Example
     ///
@@ -185,6 +208,8 @@ impl AsyncEventEmitter {
     /// // Removes the listener that we just added
     /// event_emitter.remove_listener(listener_id);
     /// ```
+    // Callers often remove a listener without checking whether it existed
+    #[allow(clippy::must_use_candidate)]
     pub fn remove_listener(&self, id_to_delete: Uuid) -> Option<Uuid> {
         let removed = self.inner.listeners.pin().values().any(|listeners| {
             listeners
@@ -208,6 +233,10 @@ impl AsyncEventEmitter {
 
     /// Adds an event listener that will only execute the listener x amount of times - Then the listener will be deleted.
     /// Returns the id of the newly added listener.
+    ///
+    /// # Panics
+    ///
+    /// The callback panics when an emitted value can't be deserialized into `T`.
     ///
     /// # Example
     ///
@@ -301,6 +330,11 @@ impl AsyncEventEmitter {
     /// Adds an event listener called for whenever every event is called
     /// Returns the id of the newly added listener.
     ///
+    /// # Panics
+    ///
+    /// Panics if a global listener is already registered. The callback panics when an
+    /// emitted value can't be deserialized into `T`.
+    ///
     /// # Example
     /// ```rust
     /// use async_event_emitter::AsyncEventEmitter;
@@ -347,7 +381,7 @@ impl fmt::Debug for AsyncListener {
         f.debug_struct("AsyncListener")
             .field("id", &self.id)
             .field("limit", &self.limit)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
