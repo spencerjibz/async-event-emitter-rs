@@ -1,4 +1,4 @@
-### async-event-emitter
+# async-event-emitter
 
 [![Crates.io](https://img.shields.io/crates/v/async-event-emitter)](https://crates.io/crates/async-event-emitter)
 [![docs.rs](https://img.shields.io/docsrs/async-event-emitter)](https://docs.rs/async-event-emitter/0.1.1/async_event_emitter/)
@@ -11,15 +11,15 @@ an Async implementation of the [`event-emitter-rs`](https://crates.io/crates/eve
 Allows you to subscribe to events with callbacks and also fire those events.
 Events are in the form of (strings, value) and callbacks are in the form of closures that take in a value parameter;
 
-#### Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
+## Differences between this crate and [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs)
  - This is an async implementation that works for all common async runtimes (Tokio, async-std and smol)
  - The listener methods ***(on and once)*** take a callback that returns a future instead of a merely a closure.
- - The emit methods executes each callback on each event by spawning intra-task instead of a std::thread.
- - This emitter is thread safe and can  also be used lock-free (supports interior mutability).
+ - The emit method runs the event's callbacks concurrently within the calling task instead of on a `std::thread`, starting them in the order they were registered.
+ - This emitter is thread-safe and completely lock-free: listeners live in copy-on-write lists inside a lock-free hash map and the global listener behind an atomic pointer, so registering, emitting and removing never block. All methods take `&self`, and clones share the same listeners.
 
  ***Note***: To use strict return and event types, use [typed-emitter](https://crates.io/crates/typed-emitter), that crate solves [this issue](https://github.com/spencerjibz/async-event-emitter-rs/issues/31) too.  
 
-#### Getting Started
+## Getting Started
 
 ```rust
     use async_event_emitter::AsyncEventEmitter;
@@ -33,7 +33,7 @@ Events are in the form of (strings, value) and callbacks are in the form of clos
     }
 ```
 
-#### Basic Usage
+## Basic Usage
 
 We can emit and listen to values of any type so long as they implement the Debug trait and serde's Serialize and Deserialize traits.
 A single EventEmitter instance can have listeners to values of multiple types.
@@ -98,7 +98,7 @@ Removing listeners is also easy
     let event_emitter = EventEmitter::new();
 
     let listener_id = event_emitter.on("Hello", |_: ()| async { println!("Hello World") });
-    match event_emitter.remove_listener(&listener_id) {
+    match event_emitter.remove_listener(listener_id) {
         Some(listener_id) => println!("Removed event listener! {listener_id}"),
         None => println!("No event listener of that id exists"),
     }
@@ -108,7 +108,7 @@ Removing listeners is also easy
         use async_event_emitter::AsyncEventEmitter as EventEmitter;
          #[tokio::main]
           async fn main() {
-         let mut event_emitter = EventEmitter::new();
+         let event_emitter = EventEmitter::new();
          // this will print Hello world two because of
          event_emitter.on_all(|value: i32| async move { println!("Hello world! - {value}") });
          // >> "Hello world! - 1"
@@ -118,7 +118,7 @@ Removing listeners is also easy
       }
 
 ```
-#### Creating a Global EventEmitter
+## Creating a Global EventEmitter
 
 You'll likely want to have a single EventEmitter instance that can be shared across files;
 
@@ -150,14 +150,12 @@ After all, one of the main points of using an EventEmitter is to avoid passing d
         }
 
 ```
-#### Usage with other runtimes
- Check out the examples from the [typed version of this crate](https://docs.rs/typed-emitter/0.1.2/typed_emitter/#getting-started), just replace the emntter type.
+### Usage with other runtimes
+ Check out the examples from the [typed version of this crate](https://docs.rs/typed-emitter/0.1.2/typed_emitter/#getting-started), just replace the emitter type.
 
- #### Testing
+### Testing
  Run the tests on this crate with all-features enabled as follows:
        ``` cargo test --all-features```
 
 
-#### License
-
-MIT License (MIT), see [LICENSE](LICENSE)
+License: [MIT](https://github.com/spencerjibz/async-event-emitter-rs/blob/main/LICENSE)
