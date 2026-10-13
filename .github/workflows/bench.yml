@@ -1,0 +1,65 @@
+name: Benchmark
+
+on:
+     pull_request:
+          branches:
+               - main
+
+env:
+     CARGO_TERM_COLOR: always
+
+jobs:
+     benchmark:
+          name: compare benchmarks against the base branch
+          runs-on: ubuntu-latest
+          permissions:
+               contents: read
+          env:
+               BASE_REF: ${{ github.base_ref }}
+               CARGO_TARGET_DIR: ${{ github.workspace }}/target
+          steps:
+               - uses: actions/checkout@v4
+                 with:
+                      fetch-depth: 0
+               - uses: dtolnay/rust-toolchain@stable
+               - uses: actions/cache@v4
+                 with:
+                      path: |
+                           ~/.cargo/bin/
+                           ~/.cargo/registry/index/
+                           ~/.cargo/registry/cache/
+                           ~/.cargo/git/db/
+                      key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.toml') }}
+               - name: Install critcmp
+                 run: command -v critcmp || cargo install critcmp --locked
+               - name: Benchmark base branch
+                 run: |
+                      git worktree add "$RUNNER_TEMP/base" "origin/$BASE_REF"
+                      cd "$RUNNER_TEMP/base"
+                      if [ -f benches/emitter.rs ]; then
+                           cargo bench --bench emitter -- --save-baseline base
+                      fi
+               - name: Benchmark pull request
+                 run: cargo bench --bench emitter -- --save-baseline pr
+               - name: Compare
+                 run: |
+                      {
+                           echo "<!-- benchmark-comparison -->"
+                           echo "### Benchmarks against \`$BASE_REF\`"
+                           echo
+                           if find target/criterion -type d -name base | grep -q .; then
+                                echo '```'
+                                critcmp base pr
+                                echo '```'
+                           else
+                                echo "\`$BASE_REF\` has no benchmarks yet, so there is nothing to compare against."
+                           fi
+                      } > comment.md
+                      echo "${{ github.event.pull_request.number }}" > pr-number
+                      cat comment.md >> "$GITHUB_STEP_SUMMARY"
+               - uses: actions/upload-artifact@v4
+                 with:
+                      name: benchmark-comparison
+                      path: |
+                           comment.md
+                           pr-number
