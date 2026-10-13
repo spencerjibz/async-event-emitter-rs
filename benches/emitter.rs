@@ -25,7 +25,11 @@ fn group_name(base: &str, global: bool) -> String {
     }
 }
 
-fn build_emitter<T>(listeners: usize, global: bool, counter: &Arc<AtomicUsize>) -> AsyncEventEmitter
+fn build_emitter<T>(
+    listeners: usize,
+    global: bool,
+    counter: &Arc<AtomicUsize>,
+) -> Arc<AsyncEventEmitter>
 where
     T: for<'de> Deserialize<'de> + 'static,
 {
@@ -44,7 +48,7 @@ where
             async {}
         });
     }
-    emitter
+    Arc::new(emitter)
 }
 
 fn bench(c: &mut Criterion, rt: &Runtime, global: bool) {
