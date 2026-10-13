@@ -22,6 +22,31 @@ mod async_event_emitter {
     #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
     struct DateTime(Date, Time);
     #[tokio::test]
+    async fn listeners_called_in_registration_order() -> anyhow::Result<()> {
+        use std::sync::{Arc, Mutex};
+        let event_emitter = AsyncEventEmitter::new();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+
+        let mut ids = Vec::new();
+        for i in 0..100 {
+            let calls = Arc::clone(&calls);
+            ids.push(event_emitter.on("ORDER", move |_: ()| {
+                calls.lock().unwrap().push(i);
+                async {}
+            }));
+        }
+        event_emitter.emit("ORDER", ()).await?;
+
+        assert_eq!(*calls.lock().unwrap(), (0..100).collect::<Vec<_>>());
+        let listed: Vec<_> = event_emitter
+            .listeners_by_event("ORDER")
+            .iter()
+            .map(|l| l.id)
+            .collect();
+        assert_eq!(listed, ids);
+        Ok(())
+    }
+    #[tokio::test]
     async fn test_async_event() -> anyhow::Result<()> {
         let event_emitter = AsyncEventEmitter::new();
 
