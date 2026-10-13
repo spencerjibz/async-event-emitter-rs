@@ -9,39 +9,31 @@ on:
 
 jobs:
      comment:
-          if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+          if: >-
+               github.event.workflow_run.event == 'pull_request' &&
+               github.event.workflow_run.conclusion == 'success' &&
+               github.event.workflow_run.head_repository.full_name != github.repository
           runs-on: ubuntu-latest
           permissions:
                actions: read
+               contents: read
                pull-requests: write
           steps:
+               - uses: actions/checkout@v4
                - uses: actions/download-artifact@v4
                  with:
                       name: benchmark-comparison
+                      path: artifact
                       run-id: ${{ github.event.workflow_run.id }}
                       github-token: ${{ secrets.GITHUB_TOKEN }}
                - uses: actions/github-script@v7
                  with:
                       script: |
                            const fs = require('fs');
-                           const issue_number = Number(fs.readFileSync('pr-number', 'utf8').trim());
-                           if (!Number.isInteger(issue_number) || issue_number <= 0) {
-                                throw new Error('invalid pull request number');
-                           }
-                           const marker = '<!-- benchmark-comparison -->';
-                           const body = fs.readFileSync('comment.md', 'utf8').slice(0, 60000);
-                           if (!body.startsWith(marker)) {
-                                throw new Error('unexpected comment body');
-                           }
-                           const comments = await github.paginate(github.rest.issues.listComments, {
-                                ...context.repo,
-                                issue_number,
+                           const post = require('./.github/scripts/benchmark-comment.js');
+                           await post({
+                                github,
+                                context,
+                                issueNumber: Number(fs.readFileSync('artifact/pr-number', 'utf8').trim()),
+                                body: fs.readFileSync('artifact/comment.md', 'utf8'),
                            });
-                           const existing = comments.find(
-                                (c) => c.user.login === 'github-actions[bot]' && c.body.startsWith(marker),
-                           );
-                           if (existing) {
-                                await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
-                           } else {
-                                await github.rest.issues.createComment({ ...context.repo, issue_number, body });
-                           }
