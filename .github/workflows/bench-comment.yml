@@ -22,7 +22,7 @@ jobs:
                - uses: actions/checkout@v4
                - uses: actions/download-artifact@v4
                  with:
-                      name: benchmark-comparison
+                      name: benchmark-results
                       path: artifact
                       run-id: ${{ github.event.workflow_run.id }}
                       github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -30,10 +30,24 @@ jobs:
                  with:
                       script: |
                            const fs = require('fs');
+                           const { validate, render } = require('./.github/scripts/benchmark-table.js');
                            const post = require('./.github/scripts/benchmark-comment.js');
-                           await post({
-                                github,
-                                context,
-                                issueNumber: Number(fs.readFileSync('artifact/pr-number', 'utf8').trim()),
-                                body: fs.readFileSync('artifact/comment.md', 'utf8'),
+
+                           const run = context.payload.workflow_run;
+                           const { data: pulls } = await github.rest.pulls.list({
+                                ...context.repo,
+                                state: 'open',
+                                head: `${run.head_repository.owner.login}:${run.head_branch}`,
                            });
+                           const pull = pulls.find((p) => p.head.sha === run.head_sha);
+                           if (!pull) {
+                                core.info(`no open pull request for ${run.head_sha}`);
+                                return;
+                           }
+
+                           const file = 'artifact/benchmark-results.json';
+                           if (fs.statSync(file).size > 256 * 1024) {
+                                throw new Error('benchmark results are too large');
+                           }
+                           const data = validate(JSON.parse(fs.readFileSync(file, 'utf8')));
+                           await post({ github, context, issueNumber: pull.number, body: render(data, pull.base.ref) });
