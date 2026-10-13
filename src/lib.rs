@@ -131,12 +131,10 @@
 */
 
 use arc_swap::{ArcSwap, ArcSwapOption};
-use futures::future::{BoxFuture, Future, FutureExt};
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
+use futures::future::{join_all, BoxFuture, Future, FutureExt};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-pub type AsyncCB = dyn Fn(Vec<u8>) -> BoxFuture<'static, ()> + Send + Sync + 'static;
+pub type AsyncCB = dyn Fn(&[u8]) -> BoxFuture<'static, ()> + Send + Sync + 'static;
 #[derive(Clone)]
 pub struct AsyncListener {
     pub callback: Arc<AsyncCB>,
@@ -171,8 +169,8 @@ where
     C: Fn(T) -> F + Send + Sync + 'static,
     F: Future<Output = ()> + Send + Sync + 'static,
 {
-    Arc::new(move |bytes: Vec<u8>| {
-        let value: T = bincode::deserialize(&bytes).unwrap_or_else(|_| {
+    Arc::new(move |bytes: &[u8]| {
+        let value: T = bincode::deserialize(bytes).unwrap_or_else(|_| {
             panic!(
                 " value can't be deserialized into type {}",
                 std::any::type_name::<T>()
@@ -261,41 +259,46 @@ impl AsyncEventEmitter {
     where
         T: Serialize,
     {
-        let mut futures: FuturesUnordered<_> = FuturesUnordered::new();
-        let bytes: Vec<u8> = bincode::serialize(&value)?;
-        {
+        let futures = {
             let events = self.inner.listeners.pin();
-            if let Some(listeners) = events.get(event) {
-                let mut expired = Vec::new();
-                for listener in listeners.load().iter() {
-                    match listener.limit {
-                        None => futures.push((listener.callback)(bytes.clone())),
-                        Some(ref limit) => {
-                            // `try_update` replaces `fetch_update` only on newer toolchains; keep this for older Rust versions
-                            #[allow(deprecated)]
-                            let claimed = limit.fetch_update(
-                                AtomicOrdering::AcqRel,
-                                AtomicOrdering::Acquire,
-                                |n| n.checked_sub(1),
-                            );
-                            match claimed {
-                                Ok(_) => futures.push((listener.callback)(bytes.clone())),
-                                Err(_) => expired.push(listener.id),
-                            }
-                        }
-                    }
+            let listeners = events.get(event);
+            let snapshot = listeners.map(ArcSwap::load);
+            let global = self.inner.all_listener.load();
+            if snapshot.as_ref().map_or(true, |current| current.is_empty()) && global.is_none() {
+                return Ok(());
+            }
+
+            let bytes: Vec<u8> = bincode::serialize(&value)?;
+            let mut futures = Vec::new();
+            let mut expired = Vec::new();
+            for listener in snapshot.iter().flat_map(|current| current.iter()) {
+                let claimed = listener.limit.as_ref().map_or(true, |limit| {
+                    // `try_update` replaces `fetch_update` only on newer toolchains; keep this for older Rust versions
+                    #[allow(deprecated)]
+                    let claimed =
+                        limit.fetch_update(AtomicOrdering::AcqRel, AtomicOrdering::Acquire, |n| {
+                            n.checked_sub(1)
+                        });
+                    claimed.is_ok()
+                });
+                if claimed {
+                    futures.push((listener.callback)(&bytes));
+                } else {
+                    expired.push(listener.id);
                 }
+            }
+            if let Some(global_listener) = global.as_ref() {
+                futures.push((global_listener.callback)(&bytes));
+            }
+            if let Some(listeners) = listeners {
                 for id in expired {
                     remove_from(listeners, id);
                 }
             }
-        }
+            futures
+        };
 
-        if let Some(global_listener) = self.inner.all_listener.load().as_ref() {
-            futures.push((global_listener.callback)(bytes));
-        }
-
-        while futures.next().await.is_some() {}
+        join_all(futures).await;
         Ok(())
     }
 
@@ -363,10 +366,10 @@ impl AsyncEventEmitter {
             callback: parse(callback),
         };
 
-        self.inner
-            .listeners
-            .pin()
-            .get_or_insert_with(event.to_string(), Listeners::default)
+        let events = self.inner.listeners.pin();
+        events
+            .get(event)
+            .unwrap_or_else(|| events.get_or_insert_with(event.to_owned(), Listeners::default))
             .rcu(|current| {
                 let mut next = Vec::with_capacity(current.len() + 1);
                 next.extend(current.iter().cloned());
