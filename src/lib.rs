@@ -130,25 +130,56 @@
         License: MIT
 */
 
-use dashmap::DashMap;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use futures::future::{BoxFuture, Future, FutureExt};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 pub type AsyncCB = dyn Fn(Vec<u8>) -> BoxFuture<'static, ()> + Send + Sync + 'static;
-use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub struct AsyncListener {
     pub callback: Arc<AsyncCB>,
-    pub limit: Option<u64>,
+    pub limit: Option<Arc<AtomicU64>>,
     pub id: Uuid,
 }
-
+type Listeners = ArcSwap<Vec<AsyncListener>>;
+#[derive(Default)]
+struct EmitterInner {
+    listeners: papaya::HashMap<String, Listeners>,
+    all_listener: ArcSwapOption<AsyncListener>,
+}
 #[derive(Default, Clone)]
 pub struct AsyncEventEmitter {
-    listeners: DashMap<String, Vec<AsyncListener>>,
-    all_listener: Arc<Mutex<Option<AsyncListener>>>,
+    inner: Arc<EmitterInner>,
+}
+
+fn remove_from(listeners: &Listeners, id: Uuid) -> bool {
+    let previous = listeners.rcu(|current| {
+        current
+            .iter()
+            .filter(|listener| listener.id != id)
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    previous.iter().any(|listener| listener.id == id)
+}
+
+fn parse<F, T, C>(callback: C) -> Arc<AsyncCB>
+where
+    for<'de> T: Deserialize<'de>,
+    C: Fn(T) -> F + Send + Sync + 'static,
+    F: Future<Output = ()> + Send + Sync + 'static,
+{
+    Arc::new(move |bytes: Vec<u8>| {
+        let value: T = bincode::deserialize(&bytes).unwrap_or_else(|_| {
+            panic!(
+                " value can't be deserialized into type {}",
+                std::any::type_name::<T>()
+            )
+        });
+        callback(value).boxed()
+    })
 }
 
 impl AsyncEventEmitter {
@@ -164,7 +195,7 @@ impl AsyncEventEmitter {
     /// event_emitter.event_count(); // returns  0
     /// ```
     pub fn event_count(&self) -> usize {
-        self.listeners.len()
+        self.inner.listeners.len()
     }
 
     /// Returns all listeners on the specified event
@@ -181,11 +212,12 @@ impl AsyncEventEmitter {
     /// }
     /// ```
     pub fn listeners_by_event(&self, event: &str) -> Vec<AsyncListener> {
-        if let Some(listeners) = self.listeners.get(event) {
-            let values = listeners.to_vec();
-            return values;
-        }
-        vec![]
+        self.inner
+            .listeners
+            .pin()
+            .get(event)
+            .map(|listeners| listeners.load().to_vec())
+            .unwrap_or_default()
     }
     /// Returns the numbers of listners per event
     /// # Example
@@ -201,10 +233,11 @@ impl AsyncEventEmitter {
     /// }
     /// ```
     pub fn listener_count_by_event(&self, event: &str) -> usize {
-        if let Some(listeners) = self.listeners.get(event) {
-            return listeners.len();
-        }
-        0
+        self.inner
+            .listeners
+            .pin()
+            .get(event)
+            .map_or(0, |listeners| listeners.load().len())
     }
 
     /// Emits an event of the given parameters and executes each callback that is listening to that event asynchronously by spawning a task for each callback.
@@ -229,40 +262,37 @@ impl AsyncEventEmitter {
         T: Serialize,
     {
         let mut futures: FuturesUnordered<_> = FuturesUnordered::new();
-
-        if let Some(ref mut listeners) = self.listeners.get_mut(event) {
-            let mut listeners_to_remove: Vec<usize> = Vec::new();
-            for (index, listener) in listeners.iter_mut().enumerate() {
-                let bytes: Vec<u8> = bincode::serialize(&value)?;
-
-                let callback = Arc::clone(&listener.callback);
-
-                match listener.limit {
-                    None => {
-                        futures.push(callback(bytes));
-                    }
-                    Some(limit) => {
-                        if limit != 0 {
-                            futures.push(callback(bytes));
-
-                            listener.limit = Some(limit - 1);
-                        } else {
-                            listeners_to_remove.push(index);
+        let bytes: Vec<u8> = bincode::serialize(&value)?;
+        {
+            let events = self.inner.listeners.pin();
+            if let Some(listeners) = events.get(event) {
+                let mut expired = Vec::new();
+                for listener in listeners.load().iter() {
+                    match listener.limit {
+                        None => futures.push((listener.callback)(bytes.clone())),
+                        Some(ref limit) => {
+                            // `try_update` replaces `fetch_update` only on newer toolchains; keep this for older Rust versions
+                            #[allow(deprecated)]
+                            let claimed = limit.fetch_update(
+                                AtomicOrdering::AcqRel,
+                                AtomicOrdering::Acquire,
+                                |n| n.checked_sub(1),
+                            );
+                            match claimed {
+                                Ok(_) => futures.push((listener.callback)(bytes.clone())),
+                                Err(_) => expired.push(listener.id),
+                            }
                         }
                     }
                 }
-            }
-
-            // Reverse here so we don't mess up the ordering of the vector
-            for index in listeners_to_remove.into_iter().rev() {
-                listeners.remove(index);
+                for id in expired {
+                    remove_from(listeners, id);
+                }
             }
         }
 
-        if let Some(global_listener) = self.all_listener.lock().unwrap().as_ref() {
-            let callback = global_listener.callback.clone();
-            let bytes: Vec<u8> = bincode::serialize(&value)?;
-            futures.push(callback(bytes));
+        if let Some(global_listener) = self.inner.all_listener.load().as_ref() {
+            futures.push((global_listener.callback)(bytes));
         }
 
         while futures.next().await.is_some() {}
@@ -282,23 +312,24 @@ impl AsyncEventEmitter {
     /// event_emitter.remove_listener(listener_id);
     /// ```
     pub fn remove_listener(&self, id_to_delete: Uuid) -> Option<Uuid> {
-        for mut mut_ref in self.listeners.iter_mut() {
-            let event_listeners = mut_ref.value_mut();
-            if let Some(index) = event_listeners
+        let removed = self.inner.listeners.pin().values().any(|listeners| {
+            listeners
+                .load()
                 .iter()
-                .position(|listener| listener.id == id_to_delete)
-            {
-                event_listeners.remove(index);
-                return Some(id_to_delete);
-            }
+                .any(|listener| listener.id == id_to_delete)
+                && remove_from(listeners, id_to_delete)
+        });
+        if removed {
+            return Some(id_to_delete);
         }
-        let mut all_listener = self.all_listener.lock().unwrap();
-        if let Some(listener) = all_listener.as_ref() {
-            if id_to_delete == listener.id {
-                all_listener.take();
-            }
+        let previous = self.inner.all_listener.rcu(|current| match current {
+            Some(listener) if listener.id == id_to_delete => None,
+            other => other.clone(),
+        });
+        match previous {
+            Some(listener) if listener.id == id_to_delete => Some(id_to_delete),
+            _ => None,
         }
-        None
     }
 
     /// Adds an event listener that will only execute the listener x amount of times - Then the listener will be deleted.
@@ -326,31 +357,22 @@ impl AsyncEventEmitter {
         F: Future<Output = ()> + Send + Sync + 'static,
     {
         let id = Uuid::new_v4();
-        let parsed_callback = move |bytes: Vec<u8>| {
-            let value: T = bincode::deserialize(&bytes).unwrap_or_else(|_| {
-                panic!(
-                    " value can't be deserialized into type {}",
-                    std::any::type_name::<T>()
-                )
-            });
-
-            callback(value).boxed()
-        };
-
         let listener = AsyncListener {
             id,
-            limit,
-            callback: Arc::new(parsed_callback),
+            limit: limit.map(|num| AtomicU64::new(num).into()),
+            callback: parse(callback),
         };
 
-        match self.listeners.get_mut(event) {
-            Some(ref mut callbacks) => {
-                callbacks.push(listener);
-            }
-            None => {
-                self.listeners.insert(event.to_string(), vec![listener]);
-            }
-        }
+        self.inner
+            .listeners
+            .pin()
+            .get_or_insert_with(event.to_string(), Listeners::default)
+            .rcu(|current| {
+                let mut next = Vec::with_capacity(current.len() + 1);
+                next.extend(current.iter().cloned());
+                next.push(listener.clone());
+                next
+            });
 
         id
     }
@@ -426,36 +448,26 @@ impl AsyncEventEmitter {
         C: Fn(T) -> F + Send + Sync + 'static,
         F: Future<Output = ()> + Send + Sync + 'static,
     {
-        assert!(
-            self.all_listener.lock().unwrap().is_none(),
-            "only one global listener is allowed"
-        );
         let id = Uuid::new_v4();
-        let parsed_callback = move |bytes: Vec<u8>| {
-            let value: T = bincode::deserialize(&bytes).unwrap_or_else(|_| {
-                panic!(
-                    " value can't be deserialized into type {}",
-                    std::any::type_name::<T>()
-                )
-            });
-            callback(value).boxed()
-        };
-
-        let listener = AsyncListener {
+        let listener = Arc::new(AsyncListener {
             id,
             limit: None,
-            callback: Arc::new(parsed_callback),
-        };
+            callback: parse(callback),
+        });
 
-        self.all_listener.lock().unwrap().replace(listener);
+        let previous = self.inner.all_listener.rcu(|current| match current {
+            None => Some(Arc::clone(&listener)),
+            other => other.clone(),
+        });
+        assert!(previous.is_none(), "only one global listener is allowed");
 
         id
     }
 }
 
-// test the AsyncEventEmitter
-// implement fmt::Debug for AsyncEventListener
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::Arc;
 impl fmt::Debug for AsyncListener {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AsyncListener")
@@ -465,11 +477,10 @@ impl fmt::Debug for AsyncListener {
     }
 }
 
-// implement fmt::Debug   for AsyncEventEmitter
 impl fmt::Debug for AsyncEventEmitter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AsyncEventEmitter")
-            .field("listeners", &self.listeners)
+            .field("listeners", &self.inner.listeners)
             .finish()
     }
 }
