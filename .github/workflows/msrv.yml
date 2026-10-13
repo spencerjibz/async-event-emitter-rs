@@ -1,0 +1,31 @@
+name: MSRV
+
+on:
+     push:
+          branches:
+               - main
+     pull_request:
+          branches:
+               - main
+
+env:
+     CARGO_TERM_COLOR: always
+
+jobs:
+     msrv:
+          name: build on the minimum supported Rust version
+          runs-on: ubuntu-latest
+          steps:
+               - uses: actions/checkout@v4
+               - name: Read rust-version from Cargo.toml
+                 id: msrv
+                 run: echo "version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+               - uses: dtolnay/rust-toolchain@stable
+               - name: Resolve dependencies that support the MSRV
+                 run: cargo generate-lockfile
+                 env:
+                      CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+               - uses: dtolnay/rust-toolchain@master
+                 with:
+                      toolchain: ${{ steps.msrv.outputs.version }}
+               - run: cargo +${{ steps.msrv.outputs.version }} check --lib --locked

@@ -5,6 +5,7 @@
 [![CI](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/spencerjibz/async-event-emitter-rs/graph/badge.svg?token=WDGKRW604P)](https://codecov.io/gh/spencerjibz/async-event-emitter-rs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MSRV](https://img.shields.io/badge/MSRV-1.72-blue)](https://github.com/spencerjibz/async-event-emitter-rs/actions/workflows/msrv.yml)
 
 an Async implementation of the [`event-emitter-rs`](https://crates.io/crates/event-emitter-rs) crate
 
@@ -152,6 +153,9 @@ After all, one of the main points of using an EventEmitter is to avoid passing d
 ```
 ### Usage with other runtimes
  Check out the examples from the [typed version of this crate](https://docs.rs/typed-emitter/0.1.2/typed_emitter/#getting-started), just replace the emitter type.
+
+### Minimum supported Rust version
+ This crate requires Rust 1.72 or newer.
 
 ### Testing
  Run the tests on this crate with all-features enabled as follows:
